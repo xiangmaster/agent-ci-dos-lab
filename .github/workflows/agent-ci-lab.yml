@@ -100,7 +100,6 @@ jobs:
   shell-quote-sink:
     name: V7 Shell Quote Break (vulnerable sink)
     needs: agent-plan
-    if: needs.agent-plan.outputs.mode == 'failure'
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
@@ -112,7 +111,6 @@ jobs:
   shell-quote-sink-hardened:
     name: V7 Hardened (env pass)
     needs: agent-plan
-    if: needs.agent-plan.outputs.mode == 'failure'
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
@@ -125,7 +123,6 @@ jobs:
   command-substitution-sink:
     name: V8 Command Substitution (vulnerable sink)
     needs: agent-plan
-    if: needs.agent-plan.outputs.mode == 'failure'
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
@@ -138,7 +135,6 @@ jobs:
   yaml-parse-sink:
     name: V9 YAML Parse Break (vulnerable sink)
     needs: agent-plan
-    if: needs.agent-plan.outputs.mode == 'failure'
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
@@ -154,7 +150,7 @@ jobs:
   workload-amplification:
     name: V1 Matrix Inflation
     needs: agent-plan
-    if: needs.agent-plan.outputs.mode == 'workload'
+    if: fromJSON(needs.agent-plan.outputs.components_count) >= 2
     runs-on: ubuntu-latest
     timeout-minutes: 3
     strategy:
@@ -173,7 +169,7 @@ jobs:
   quota-drain-round:
     name: V2 Round/Loop Amplification
     needs: agent-plan
-    if: needs.agent-plan.outputs.mode == 'quota'
+    if: fromJSON(needs.agent-plan.outputs.rounds) >= 2
     runs-on: ubuntu-latest
     timeout-minutes: 3
     strategy:
@@ -199,7 +195,7 @@ jobs:
   concurrency-block:
     name: V3 Concurrency Hijack
     needs: agent-plan
-    if: needs.agent-plan.outputs.mode == 'block' || needs.agent-plan.outputs.priority == 'critical'
+    if: needs.agent-plan.outputs.mode == 'block' || needs.agent-plan.outputs.priority == 'critical' || needs.agent-plan.outputs.priority == 'high'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     concurrency:
