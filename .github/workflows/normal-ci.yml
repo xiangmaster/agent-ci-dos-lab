@@ -1,0 +1,27 @@
+name: Normal CI Lab
+
+# 用来验证 V3 Concurrency Hijack 是否真的阻塞了正常 CI。
+# 共享同一个 concurrency group。
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+concurrency:
+  group: agent-ci-dos-shared-ci
+  cancel-in-progress: false
+
+jobs:
+  normal-ci:
+    name: Normal CI sharing concurrency
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run normal CI work
+        run: |
+          echo "normal CI started at $(date -u +%FT%TZ)"
+          echo "would lint/test/build here"
+          sleep 5
+          echo "normal CI done at $(date -u +%FT%TZ)"
