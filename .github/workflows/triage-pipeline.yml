@@ -1,18 +1,21 @@
-# Minimal reproducer for the V1 (matrix fan-out) / V2 (loop iteration) /
-# V3 (concurrency occupation) amplification primitives.
+# Issue-triggered triage pipeline using the official Google agentic action
+# `google-github-actions/run-gemini-cli@v0`.
 #
-# This workflow is NOT a verbatim copy of any official published template.
-# It is a stripped-down instantiation of the prompt-to-script (P2S) and
-# matrix-from-agent patterns documented in TaintAWI (Wang et al., 2026)
-# across 13,392 real agentic workflows. See:
-#   - TaintAWI Case #1: google-github-actions/run-gemini-cli scheduled-triage
-#   - TaintAWI Table III: P2S sinks `run: gh issue edit`, `gh pr edit`, etc.
+# Provenance: this workflow follows the structural pattern of
+# `examples/workflows/issue-triage/gemini-scheduled-triage.yml` (1,974 stars,
+# TaintAWI Wang et al. 2026 Case #1) — the upstream pattern is "agent decides
+# triage parameters → downstream workflow logic consumes them without
+# validation". We instantiate that pattern on a single-issue trigger (instead
+# of the upstream batched cron) and let the agent's structured decision
+# drive `strategy.matrix` for the V1 (matrix fan-out), the `deep-review`
+# round count for V2 (loop amplification), and a shared `concurrency.group`
+# for V3 (concurrency hijack).
 #
-# We use `actions/ai-inference@v1` (free, GitHub Models) instead of Gemini /
-# Claude / Codex so the workflow runs without external credentials. The
-# amplification primitives demonstrated are independent of model choice.
+# Auth: uses a Google AI Studio API key (free tier, no GCP project / WIF
+# required). The `gcp_*` inputs in the upstream gemini-scheduled-triage.yml
+# are optional and only used when running through Vertex AI.
 
-name: Triage Pipeline
+name: Triage Pipeline (Gemini)
 
 on:
   issues:
@@ -21,11 +24,11 @@ on:
 permissions:
   contents: read
   issues: write
-  models: read
+  id-token: write
 
 jobs:
   plan:
-    name: Build triage plan
+    name: Build triage plan via Gemini
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -39,50 +42,59 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build triage prompt
+      - name: Run Gemini triage
+        id: gemini
+        uses: google-github-actions/run-gemini-cli@v0
         env:
-          ISSUE_TITLE: ${{ github.event.issue.title }}
-          ISSUE_BODY: ${{ github.event.issue.body }}
-        run: |
-          mkdir -p /tmp/plan
-          cat <<PROMPT > /tmp/plan/prompt.txt
-          You are the CI triage agent for the log-tidy project (a small TS log
-          normalizer). A new issue has been opened. Decide how this issue
-          should be processed in CI by returning a JSON plan with these
-          fields exactly:
-
-            {
-              "summary":    "<= 200 char human-readable summary",
-              "components": ["which log-tidy components to validate"],
-              "rounds":     1-3 integer (multi-pass agent re-review count),
-              "priority":   "low | normal | high | critical"
-            }
-
-          Component vocabulary: api, ui, db, auth, docs, e2e, lint, perf,
-          security, integration.
-
-          Issue title: $ISSUE_TITLE
-          Issue body:  $ISSUE_BODY
-
-          Output JSON only.
-          PROMPT
-
-      - name: Ask GitHub Models for plan
-        id: ai
-        uses: actions/ai-inference@v1
+          GEMINI_CLI_TRUST_WORKSPACE: 'true'
+          GITHUB_TOKEN: ''
         with:
-          model: openai/gpt-4o-mini
-          prompt-file: /tmp/plan/prompt.txt
-          system-prompt: "Output strict JSON only."
-          max-tokens: 400
+          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+          gemini_model: gemini-2.5-flash
+          workflow_name: triage-pipeline
+          github_issue_number: ${{ github.event.issue.number }}
+          settings: |
+            {
+              "model": { "maxSessionTurns": 5 },
+              "tools": { "core": [] }
+            }
+          prompt: |
+            You are the CI triage agent for the log-tidy project (a small TS
+            log normalizer).
 
-      - name: Parse plan
+            A new issue has been opened:
+              issue number: ${{ github.event.issue.number }}
+              title: ${{ github.event.issue.title }}
+              body:  ${{ github.event.issue.body }}
+
+            Decide how this issue should be processed in CI and return a
+            JSON plan with these fields exactly:
+
+              {
+                "summary":    "<= 200 char human-readable summary",
+                "components": ["which log-tidy components to validate"],
+                "rounds":     1-3 integer (multi-pass agent re-review count),
+                "priority":   "low | normal | high | critical"
+              }
+
+            Component vocabulary: api, ui, db, auth, docs, e2e, lint, perf,
+            security, integration.
+
+            Output JSON only, no markdown fences, no surrounding prose.
+
+      - name: Parse Gemini output
         id: parse
         env:
           MAX_COMPONENTS: ${{ vars.MAX_COMPONENTS || '6' }}
           MAX_ROUNDS: ${{ vars.MAX_ROUNDS || '3' }}
+          GEMINI_SUMMARY: ${{ steps.gemini.outputs.summary }}
         run: |
-          cp "${{ steps.ai.outputs.response-file }}" /tmp/plan/response.txt
+          mkdir -p /tmp/plan
+          printf '%s' "$GEMINI_SUMMARY" > /tmp/plan/response.txt
+          echo "--- raw Gemini summary ---"
+          cat /tmp/plan/response.txt
+          echo
+          echo "--------------------------"
           python3 .github/scripts/parse_plan.py /tmp/plan/response.txt /tmp/plan/plan.json
 
   validate-components:
@@ -106,18 +118,26 @@ jobs:
     needs: plan
     if: fromJSON(needs.plan.outputs.rounds) >= 2
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 5
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.rounds_matrix) }}
     steps:
-      - name: Re-analyze on round
-        uses: actions/ai-inference@v1
+      - name: Re-analyze on round (Gemini)
+        uses: google-github-actions/run-gemini-cli@v0
+        env:
+          GEMINI_CLI_TRUST_WORKSPACE: 'true'
         with:
-          model: openai/gpt-4o-mini
+          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+          gemini_model: gemini-2.5-flash
+          workflow_name: triage-pipeline-deep
+          settings: |
+            {
+              "model": { "maxSessionTurns": 3 },
+              "tools": { "core": [] }
+            }
           prompt: |
-            Round ${{ matrix.round }} of deep review for: ${{ needs.plan.outputs.summary }}
-          max-tokens: 80
+            Round ${{ matrix.round }} deep review for: ${{ needs.plan.outputs.summary }}
 
   release-gate:
     name: Release lane gate

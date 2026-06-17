@@ -100,5 +100,71 @@ else
   fi
 fi
 
+GEMINI_TOKEN="${GEMINI_TOKEN:-${YUNWU_TOKEN:-}}"
+GEMINI_BASE_URL="${GEMINI_BASE_URL:-https://yunwu.ai}"
+GEMINI_MODEL="${GEMINI_MODEL:-gemini-3.5-flash}"
+
 echo
-echo "完成。两个 PASS 就说明中转站可以喂给 claude-code-action / codex-action。"
+echo "============================================================"
+echo "test 3: Gemini via Google Native (yunwu generateContent)"
+echo "  endpoint: ${GEMINI_BASE_URL}/v1beta/models/${GEMINI_MODEL}:generateContent"
+echo "  model:    ${GEMINI_MODEL}"
+echo "============================================================"
+
+if [ -z "$GEMINI_TOKEN" ]; then
+  fail "GEMINI_TOKEN 空，跳过 Gemini 测试"
+else
+  # 先用 Bearer auth（yunwu 文档说支持）
+  echo "[try 1] Authorization: Bearer ..."
+  resp=$(curl -sS -w "\n__HTTP_STATUS__:%{http_code}" \
+    "${GEMINI_BASE_URL}/v1beta/models/${GEMINI_MODEL}:generateContent" \
+    -H "Authorization: Bearer ${GEMINI_TOKEN}" \
+    -H "Content-Type: application/json" \
+    -d '{"contents":[{"parts":[{"text":"Say hi in exactly 5 words."}]}]}')
+  status=$(echo "$resp" | grep -o '__HTTP_STATUS__:.*' | cut -d: -f2)
+  body=$(echo "$resp" | sed 's/__HTTP_STATUS__:.*//')
+  echo "HTTP status: $status"
+  echo "$body" | head -c 1500
+  echo
+
+  if [ "$status" = "200" ]; then
+    pass "Gemini (Bearer auth) OK"
+  else
+    fail "Gemini Bearer 失败 (HTTP $status)"
+    # 退路：Google 标准 query string key=
+    echo "[try 2] ?key= 查询参数（Google 标准）..."
+    resp=$(curl -sS -w "\n__HTTP_STATUS__:%{http_code}" \
+      "${GEMINI_BASE_URL}/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_TOKEN}" \
+      -H "Content-Type: application/json" \
+      -d '{"contents":[{"parts":[{"text":"Say hi in exactly 5 words."}]}]}')
+    status=$(echo "$resp" | grep -o '__HTTP_STATUS__:.*' | cut -d: -f2)
+    body=$(echo "$resp" | sed 's/__HTTP_STATUS__:.*//')
+    echo "HTTP status: $status"
+    echo "$body" | head -c 1500
+    echo
+    if [ "$status" = "200" ]; then
+      pass "Gemini (?key= query) OK"
+    else
+      fail "Gemini ?key= 也失败 (HTTP $status)"
+    fi
+
+    # 再退路：x-goog-api-key header
+    echo "[try 3] x-goog-api-key header（Google 标准 header）..."
+    resp=$(curl -sS -w "\n__HTTP_STATUS__:%{http_code}" \
+      "${GEMINI_BASE_URL}/v1beta/models/${GEMINI_MODEL}:generateContent" \
+      -H "x-goog-api-key: ${GEMINI_TOKEN}" \
+      -H "Content-Type: application/json" \
+      -d '{"contents":[{"parts":[{"text":"Say hi in exactly 5 words."}]}]}')
+    status=$(echo "$resp" | grep -o '__HTTP_STATUS__:.*' | cut -d: -f2)
+    body=$(echo "$resp" | sed 's/__HTTP_STATUS__:.*//')
+    echo "HTTP status: $status"
+    echo "$body" | head -c 1500
+    echo
+    if [ "$status" = "200" ]; then
+      pass "Gemini (x-goog-api-key header) OK"
+    fi
+  fi
+fi
+
+echo
+echo "完成。三个 PASS 说明三条 vendor 路径都能用。"
