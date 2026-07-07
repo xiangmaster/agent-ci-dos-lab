@@ -1,46 +1,65 @@
-# Experiments
+# Agentic CI 攻击面 v2 实验总索引
 
-本目录存放攻击实验的 payload、运行记录和截图。
+本目录组织所有 PoC 实验,与 `xiangmaster/Agentic-CI-Survey` 仓库中定义的 v2 攻击面分类学一一对应。
 
-## 仓库结构
+## 组织原则
 
-```
-.github/workflows/
-  summary.yml               L1 真实模板（GitHub 官方 starter-workflows a041377 漏洞原版）
-  claude-issue-triage.yml   L1 真实模板（Anthropic 官方 examples，经 yunwu 中转）
-  claude-pr-review.yml      L1 真实模板（Anthropic 官方 examples，经 yunwu 中转）
-  triage-pipeline.yml       L1 真实模板（Google run-gemini-cli@v0 官方 action，结构沿用 TaintAWI Case #1）
-  normal-ci.yml             配合 triage-pipeline 演示 V3 共享 concurrency
-.github/scripts/
-  parse_plan.py             triage-pipeline 用的最小 plan parser
-```
+- **一 PoC 一目录**,严格按 `A{编号}[{子面}]-{slug}` 命名
+- **一 PoC 只 illustrate 一个 A**,禁止跨面混合
+- **每个 PoC 走标准 8 段结构**(见 `_template/README.md`)
+- **命名与 v2 分类学对齐**,不再使用 V1–V14 旧编号
 
-**所有 7 个 V 都已部署到 L1 真实模板上。**没有 toy lab，没有 minimal reproducer。
+## 12 格状态总表
 
-## V_i → workflow 映射
+| 编号 | 攻击面 | 优先级 | 状态 | 最后运行 | 结果 | 备注 |
+|---|---|---|---|---|---|---|
+| A1 | 事件内容注入 | P2 | ⚪ 未开始 | — | — | 所有 PoC 公共入口,单独跑一个 baseline |
+| A2a | `pull_request_target` 借权 | P1 | ⚪ 未开始 | — | — | fork PR 目标仓 write token 生效 |
+| A2b | `issue_comment` 借状态 | P1 | ⚪ 未开始 | — | — | 编辑评论 TOCTOU |
+| A2c | TOCTOU checkout | P1 | ⚪ 未开始 | — | — | trigger SHA ≠ checkout SHA |
+| A3 | 配置信任提升 | P1 | ⚪ 未开始 | — | — | CLAUDE.md / GEMINI.md / AGENTS.md / .cursorrules |
+| **A4-1** | 恶意 GitHub Action | **P0** | ⚪ 未开始 | — | — | 上游 `uses:` |
+| **A4-2** | 恶意 MCP server | **P0** | ⚪ 未开始 | — | — | 返回值污染 agent context |
+| **A4-3** | 恶意 npm 包 | **P0** | ⚪ 未开始 | — | — | postinstall hook exfil |
+| A5 | Agent 上下文腐化 | P2 | ⚪ 未开始 | — | — | delimiter / 编码 / jailbreak 原语表 |
+| A6a | 工具越权 | P2 | ⚪ 未开始 | — | — | prompt 诱导 Bash gh:* / WebFetch |
+| **A6b** | 沙箱逃逸 | **P0** | ⚪ 未开始 | — | — | 重放 MS Claude Read 案例 |
+| A7a | Output-as-Prompt | P0 | ⚪ 未开始 | — | — | cross-agent 链式扩散 |
+| A7b | Output-as-Sink | P2 | ⚪ 未开始 | — | — | agent 输出→sink 埋雷 |
+| **A7c** | 欺骗人类审核员 | **P0** | ⚪ 未开始 | — | — | 漏报 CVE / 误标 severity |
+| A8 | Sink 解析破 | P1 | ⚪ 未开始 | — | — | shell / YAML / expression re-eval |
+| **A9-1** | Token exfil | **P0** | ⚪ 未开始 | — | — | 泄露到 attacker webhook |
+| **A9-2** | Cache poisoning | P1 | ⚪ 未开始 | — | — | actions/cache 污染 |
+| **A9-3** | Auto-merge 传播 | P1 | ⚪ 未开始 | — | — | agent approve 恶意 PR |
 
-| V | 名称 | Workflow | 真实性背书 |
-|---|---|---|---|
-| V1 | Matrix Inflation | triage-pipeline.yml `validate-components` | Google `run-gemini-cli@v0` 官方 action（TaintAWI Case #1 1974★） |
-| V2 | Round/Loop Amplification | triage-pipeline.yml `deep-review` | 同上 |
-| V3 | Concurrency Hijack | triage-pipeline.yml `release-gate` + normal-ci.yml | 同上 + GitHub Actions concurrency 原生 |
-| V4 | Self-Cascade | claude-issue-triage.yml | Anthropic claude-code-action 官方 issue-triage 示例 |
-| V7 | Shell Quote Break | summary.yml `gh issue comment --body '...'` | GitHub starter-workflows a041377（TaintAWI Case #2，93 fork 仍受影响） |
-| V8 | Command Substitution | summary.yml（同 V7 sink + escape 链） | 同上 |
-| V14 | Persistent Config Pollution | claude-pr-review.yml + PR adds CLAUDE.md | Anthropic claude-code-action 官方 PR review 模板 + auto-load CLAUDE.md 行为 |
+图例:⚪ 未开始 / 🟡 进行中 / ✅ 复现成功 / ❌ 复现失败(被防御拦截) / 🔒 已受平台修复
 
-未在今天范围内的 V：V5（tool spam）、V6（timeout inflation）、V9（YAML parse break）、V10（expression re-eval）、V11（encoding bypass）、V12（oversize payload）、V13（filename hostile）。这些列为 future work。
+## 优先级说明
 
-## 三个 vendor 的实际 LLM 来源
+- **P0(novelty 集中,必做)**:A4-1/A4-2/A4-3、A6b、A7a、A7c、A9-1 —— 论文的独有贡献
+- **P1(强建议)**:A2a/A2b/A2c、A3、A8、A9-2、A9-3 —— 已知攻击面在 agentic 场景的验证
+- **P2(代表性)**:A1、A5、A6a、A7b —— 有大量类似工作,做一个 baseline 即可
 
-- **Anthropic**（claude-code-action）：claude-sonnet-4-6，经 yunwu.ai 中转
-- **Google**（run-gemini-cli）：gemini-2.5-flash，Google AI Studio API key 直连
-- **OpenAI**（GitHub Models inside summary.yml）：openai/gpt-4o-mini 自带
+## 攻击者 / 受害者角色
 
-三家模型同时在线，体现"vendor-agnostic"的攻击面。
+| 角色 | 账号 | 用途 |
+|---|---|---|
+| Repo_victim | `xiangmaster/agent-ci-dos-lab` (public) | 挂载 agentic workflow,接受攻击 |
+| User_attacker | 待定 (原 `xiang-super`) | fork / 发 issue / 开 PR |
+| Attacker_repo | 待定 (`xiang-super/*`) | 承载 A4-1 恶意 action、A9 exfil endpoint |
+| Attacker_webhook | 待定 (webhook.site / CF Worker) | 收 A9 泄露的 token |
 
-## 文件
+## 复现流程
 
-- [attack-payloads.md](attack-payloads.md)：每个 V 对应的攻击 issue / PR 文本
-- [results.md](results.md)：每次实验的运行记录、截图清单、放大比
-- [test_yunwu.sh](test_yunwu.sh)：验证中转站 endpoint 可用性的脚本
+1. `cd experiments/A{X}-{...}/`
+2. 读 `README.md` 的 Setup + Attacker action 章节
+3. 按 attacker/ 下的 payload 文件在 GitHub UI 手动构造 issue/PR/comment
+4. 观察 GitHub Actions run log,采集到 observed/
+5. 填 `result.md` 记录 success/fail 判定与时间戳
+6. 回来更新本文件顶部状态表
+
+## 关联文档
+
+- 主分类学:`../../Agentic-CI-Survey/docs/attack-surface-taxonomy.md`
+- 威胁模型前置:`../../Agentic-CI-Survey/docs/threat-model-prerequisites.md`
+- 主图:`../../Agentic-CI-Survey/assets/fig1-pipeline.pdf`

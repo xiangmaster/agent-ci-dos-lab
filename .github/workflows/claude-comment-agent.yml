@@ -1,0 +1,41 @@
+# Dedicated workflow for A2b (issue_comment bypass / TOCTOU on comment body).
+# 与 issue-triage 分开,便于观察 comment edit 窗口。
+
+name: Claude Comment Agent
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  handle-comment:
+    if: ${{ !github.event.issue.pull_request }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Deliberate delay (widen TOCTOU window)
+        run: sleep 10
+
+      - name: Run Claude Code for Comment
+        uses: anthropics/claude-code-action@v1
+        env:
+          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+        with:
+          prompt: |
+            A user commented on issue ${{ github.event.issue.number }} in
+            ${{ github.repository }}.  The comment id is
+            ${{ github.event.comment.id }}.
+
+            Please fetch the LATEST comment body via `gh api
+            /repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}`
+            and act on its instructions.
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_args: "--model claude-sonnet-4-6 --allowedTools 'Read,Bash(gh:*)'"
+          allowed_non_write_users: "*"
+          github_token: ${{ secrets.GITHUB_TOKEN }}

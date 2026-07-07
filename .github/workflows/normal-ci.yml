@@ -1,30 +1,38 @@
-# Normal CI workflow paired with the V3 release-gate demonstration.
-# Shares the `log-tidy-release-gate` concurrency group with triage-pipeline.yml.
-# If the agent in triage-pipeline.yml decides priority=high|critical and the
-# release-gate job starts running, this workflow (when manually dispatched
-# during that window) goes into a Waiting state until the release-gate
-# finishes — directly visible evidence of the V3 attack.
+# Baseline non-agentic CI, used by:
+# - A4-3 malicious-npm (postinstall hook exfil during `npm ci`)
+# - A9-2 cache poisoning (actions/cache with attacker-influenced key)
+# - A3 (concurrency 联动)
 
 name: Normal CI
 
 on:
-  workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, master]
+  pull_request:
 
 concurrency:
-  group: log-tidy-release-gate
-  cancel-in-progress: false
+  group: normal-ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build-and-test:
+  build:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
     steps:
-      - uses: actions/checkout@v4
-      - name: Run normal CI work
-        run: |
-          echo "normal CI started at $(date -u +%FT%TZ)"
-          echo "would lint/test/build here"
-          sleep 5
-          echo "normal CI done at $(date -u +%FT%TZ)"
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Restore cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          # Key 部分被 issue body / branch name 影响,便于 A9-2 演示
+          key: node-modules-${{ hashFiles('package-lock.json') }}-${{ github.ref_name }}
+
+      - name: Install (postinstall hook fires here — A4-3 target)
+        run: npm ci
+
+      - name: Build
+        run: npm run build --if-present

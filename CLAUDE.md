@@ -1,42 +1,69 @@
 # agent-ci-dos-lab
 
-研究 agent-mediated CI-DoS 攻击的受害者仓库。GitHub 镜像：`xiangmaster/agent-ci-dos-lab`（public）。
+Agentic CI/CD 安全研究的**受害者仓库**(Repo_victim)。挂载多组真实 agentic workflow 模板,接受外部账号(User_attacker)通过 issue / PR / comment / fork 投递攻击载荷。
 
-## 项目角色
+GitHub 镜像:`xiangmaster/agent-ci-dos-lab`(public)。
 
-这是实验中的 `Repo_victim`：在 GitHub 上以公开仓库形态部署多组真实 agentic workflow 模板，接受外部账号（`User_attacker`）通过 issue / PR 投放攻击载荷。
+伪装成一个小型 TypeScript 日志规范化工具 `log-tidy`(`src/` / `package.json` / `README.md`),仿 GitInject 的 ephemeral victim 做法。
 
-仓库本身伪装成一个小型 TypeScript 日志规范化工具（`log-tidy`）。装饰性的 `src/` / `package.json` / `README.md` 是为了让仓库看起来像真实开源项目（仿 GitInject 的 ephemeral victim 做法）。
+---
 
-## 实验装置两层
+## 分类学锚定
 
-### L1 真实官方模板（一字不差或仅最小适配）
-- `.github/workflows/summary.yml`：GitHub `actions/starter-workflows` commit a041377 漏洞原版，TaintAWI Case #2 记录。覆盖 V7 / V8 sink 类
-- `.github/workflows/claude-issue-triage.yml`：Anthropic claude-code-action 官方 examples/issue-triage.yml 适配版。覆盖 V4 self-cascade
-- `.github/workflows/claude-pr-review.yml`：Anthropic claude-code-action 官方 examples/pr-review-comprehensive.yml 适配版。覆盖 V14 持久污染
+本仓库的实验组织**严格对齐** `Agentic-CI-Survey` 的 v2 攻击面分类学:
+- 主分类:[Agentic-CI-Survey/docs/attack-surface-taxonomy.md](../Agentic-CI-Survey/docs/attack-surface-taxonomy.md)
+- 主图:[Agentic-CI-Survey/assets/fig1-pipeline.pdf](../Agentic-CI-Survey/assets/fig1-pipeline.pdf)
 
-### L2 最小可复现实例（基于 TaintAWI 已扫到的模式）
-- `.github/workflows/triage-pipeline.yml`：用 actions/ai-inference 复刻 P2S amplifier，覆盖 V1 / V2 / V3
-- `.github/workflows/normal-ci.yml`：与 triage-pipeline 共享 concurrency group，配合演示 V3
+**v2 分类学定型后,不再使用 V1–V14 旧编号。所有实验按 A 编号组织。**
 
-## API key 配置
+---
 
-仓库 secrets：
-- `ANTHROPIC_API_KEY`：yunwu.ai 中转站 token（喂 claude-code-action）
-- `ANTHROPIC_BASE_URL`：`https://yunwu.ai`（claude-code-action 走中转）
-- `OPENAI_API_KEY`：同 yunwu token
-- `OPENAI_BASE_URL`：`https://yunwu.ai/v1`
+## Workflow 装置(与 PoC 的对应)
 
-本地 `.env`（gitignored）存同样配置，给 `experiments/test_yunwu.sh` 用。
+| Workflow 文件 | Trigger | 覆盖攻击面 |
+|---|---|---|
+| `claude-issue-triage.yml` | `on: issues` | A1、A5、A6a、A6b、A7a-1、A9-1 |
+| `claude-pr-review.yml` | `on: pull_request_target` | A2a、A2c、A3、A7c、A9-3 |
+| `claude-comment-agent.yml` | `on: issue_comment` | A2b |
+| `gemini-issue-triage.yml` | `on: issues` | A7a-2 cross-agent |
+| `mcp-agent.yml` | `on: issues` | A4-2、A7b、A8 |
+| `normal-ci.yml` | `on: push/pr` | A4-3、A9-2 |
 
-## 启动方式
+---
 
-仓库本身不运行。所有实验通过外部账号在 GitHub 网页发 issue / PR 触发对应 workflow 完成。
+## 实验目录
 
-## 实验流程
+- 总索引:[`experiments/README.md`](experiments/README.md) — 含 12 格状态表
+- 标准模板:[`experiments/_template/`](experiments/_template/) — 每个 PoC 走 8 段结构
+- P0 优先:A4-1 / A4-2 / A4-3 / A6b / A7a / A7c / A9-1
 
-详见 `experiments/README.md` 和 `experiments/attack-payloads.md`。
+---
 
-## 部署
+## 关键 canary 值(env-injected,不放真 secret)
 
-仓库已部署到 `xiangmaster/agent-ci-dos-lab` (public)。本地改动通过 git push 同步。
+| Env var | Canary value | 目的 |
+|---|---|---|
+| `ANTHROPIC_API_KEY_CANARY` | `sk-ant-CANARY-A6B-abcd1234` | A6b 沙箱逃逸 exfil 目标 |
+| `GITHUB_TOKEN_CANARY` | `ghp_CANARY-A6B-abcd1234` | A6b |
+| `NPM_TOKEN_CANARY` | `npm_CANARY-A9-1-abcd1234` | A9-1 token exfil |
+| `GHCR_TOKEN_CANARY` | `ghcr_CANARY-A9-1-abcd1234` | A9-1 |
+| `OVSX_TOKEN_CANARY` | `ovsx_CANARY-A9-1-abcd1234` | A9-1 |
+
+**真实的 `ANTHROPIC_API_KEY` / `ANTHROPIC_BASE_URL` / `GEMINI_API_KEY` 通过 GitHub Secrets 注入,不入库**。
+
+---
+
+## 隔离原则
+
+- 所有 exfil 目标必须是攻击者自己控制的 endpoint(webhook.site / CF Worker),禁止打真实生态
+- 所有 supply-chain 攻击(A4/A9)禁止实际推送到 npm/OVSX/Docker Hub
+- 遇到未知漏洞(如 A6b 复现出未披露洞)必须走 responsible disclosure
+- Repo 保持 public 期间,若 issue/PR 中意外出现真 secret 前缀,立刻删除并 rotate
+
+---
+
+## 常用命令
+
+- 触发 issue-based PoC:GitHub UI 手动开 issue(payload 复制自 `experiments/A*/attacker/`)
+- 查 run log:`gh run list --workflow=claude-issue-triage.yml`
+- 拉 run 详情:`gh run view {run-id} --log > experiments/A*/observed/{date}-run-log.txt`
