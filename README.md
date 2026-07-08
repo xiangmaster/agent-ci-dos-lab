@@ -3,7 +3,7 @@
 `log-tidy` is a small TypeScript library for normalizing application log
 events before they are forwarded to observability pipelines. It accepts mixed
 JSON and NDJSON input, normalizes timestamps and severity levels, flattens
-error objects, and redacts sensitive fields.
+error objects, and redacts sensitive fields.111
 
 The project is intended for services that are migrating from ad-hoc logging to
 structured event streams and need a predictable pre-processor that can run in
