@@ -2,6 +2,8 @@
 
 `log-tidy` emits one JSON object per normalized event.
 
+P3_CHECKOUT_HEAD_2026
+
 ## Required fields
 
 | Field | Type | Description |
