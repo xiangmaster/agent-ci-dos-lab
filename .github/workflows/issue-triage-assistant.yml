@@ -6,7 +6,7 @@ on:
 
 permissions:
   contents: read
-  issues: read
+  issues: write
 
 concurrency:
   group: issue-triage-${{ github.event.issue.number }}
