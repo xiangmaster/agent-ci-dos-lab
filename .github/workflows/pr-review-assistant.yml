@@ -7,7 +7,7 @@ on:
 permissions:
   contents: read
   pull-requests: write
-  issues: write
+  issues: read
 
 concurrency:
   group: pr-review-${{ github.event.pull_request.number }}
