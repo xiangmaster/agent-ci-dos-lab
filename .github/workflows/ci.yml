@@ -26,6 +26,19 @@ jobs:
         with:
           node-version: "20"
 
+      - name: P3 untrusted dependency guard
+        if: github.event_name == 'pull_request' && startsWith(github.event.pull_request.title, '[P3-DEPENDENCY]')
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          changed=$(git diff --name-only "${BASE_SHA}" "${HEAD_SHA}" -- package.json package-lock.json)
+          echo "P3_DEPENDENCY_CHANGED_FILES=${changed}"
+          if [[ -n "${changed}" ]]; then
+            echo "P3_DEPENDENCY_LOAD_BLOCKED=true"
+            exit 1
+          fi
+
       - name: Install dependencies
         run: npm install
 
