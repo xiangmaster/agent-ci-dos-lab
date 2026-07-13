@@ -20,6 +20,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: P2 issue write capability probe
+        if: startsWith(github.event.issue.title, '[P2-PROBE]')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          gh api --method POST \
+            "repos/${REPOSITORY}/issues/${ISSUE_NUMBER}/comments" \
+            --field body="P2_ISSUE_WRITE_CANARY run=${GITHUB_RUN_ID}"
+
       - name: Run triage assistant
         uses: anthropics/claude-code-action@v1
         env:
