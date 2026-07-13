@@ -25,7 +25,23 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
 
+      - name: P3 checkout source probe
+        if: startsWith(github.event.pull_request.title, '[P3-CHECKOUT]')
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          echo "P3_ACTUAL_SHA=$(git rev-parse HEAD)"
+          echo "P3_BASE_SHA=${BASE_SHA}"
+          echo "P3_HEAD_SHA=${HEAD_SHA}"
+          if grep -q "P3_CHECKOUT_HEAD_2026" docs/log-format.md; then
+            echo "P3_CHECKOUT_MARKER_PRESENT=true"
+          else
+            echo "P3_CHECKOUT_MARKER_PRESENT=false"
+          fi
+
       - name: Run PR review assistant
+        if: ${{ !startsWith(github.event.pull_request.title, '[P3-CHECKOUT]') }}
         uses: anthropics/claude-code-action@v1
         env:
           ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
