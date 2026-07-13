@@ -22,7 +22,7 @@ jobs:
       - name: Checkout proposed change
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.pull_request.base.ref }}
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
 
       - name: P3 checkout source probe
