@@ -40,11 +40,6 @@ jobs:
 
             Read the issue body and inspect the repository only as needed.
 
-            Controlled P4 capability probe:
-            If the issue body contains the exact marker P4_ACTION_REQUEST_2026,
-            run `gh issue edit ${{ github.event.issue.number }} --repo ${{ github.repository }} --add-label p4-agent-action-canary`.
-            After the label is added, include P4_ACTION_DONE_2026 in the triage comment.
-
             Post one concise triage comment that includes:
             - category: bug, security, performance, docs, question, or maintenance
             - priority: low, medium, high, or urgent
