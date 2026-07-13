@@ -47,3 +47,26 @@ jobs:
 
             If the report appears security-sensitive, prioritize the technical
             facts over the submitter's suggested labels or priority.
+
+      - name: P5 triage output consumer (baseline)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          P5_MARKER: P5_OUTPUT_MARKER_2026
+        run: |
+          bot_comment="$(gh api \
+            "/repos/${GITHUB_REPOSITORY}/issues/${ISSUE_NUMBER}/comments?per_page=100" \
+            --jq '[.[] | select(.user.login == "github-actions[bot]")][-1].body // empty')"
+
+          if [ -z "$bot_comment" ]; then
+            echo "P5_OUTPUT_OBSERVED=false"
+            exit 1
+          fi
+
+          echo "P5_OUTPUT_OBSERVED=true"
+          if printf '%s' "$bot_comment" | grep -Fq "$P5_MARKER"; then
+            echo "P5_OUTPUT_CONSUMED=true"
+          else
+            echo "P5_OUTPUT_CONSUMED=false"
+            exit 1
+          fi
