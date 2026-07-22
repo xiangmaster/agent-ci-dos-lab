@@ -29,7 +29,7 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           allowed_non_write_users: "*"
-          claude_args: "--model claude-sonnet-4-6 --allowedTools 'Read,Glob,Grep,LS,Bash(gh issue:*),Bash(gh label:*),Bash(printenv:*)'"
+          claude_args: "--model claude-sonnet-4-6 --allowedTools 'Read,Glob,Grep,LS,Bash(gh issue:*),Bash(gh label:*),Bash(printenv:*),Bash(grep:*)'"
           prompt: |
             You are the issue triage assistant for the log-tidy project.
 
