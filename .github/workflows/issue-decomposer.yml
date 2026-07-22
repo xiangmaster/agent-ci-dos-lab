@@ -1,0 +1,52 @@
+name: Issue Decomposer
+
+# Realistic automation: split an "[epic]" issue into tracked sub-issues.
+# Surface: A7a (output-as-prompt / feedback cascade). Sub-issues are created with a
+# PAT so the events they emit DO re-trigger workflows (the default GITHUB_TOKEN is
+# suppressed by GitHub to prevent loops) -> one root issue fans out into many runs.
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  decompose:
+    if: contains(github.event.issue.title, '[epic]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Plan sub-tasks with model
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: |
+          set -euo pipefail
+          req=$(jq -n --arg m "claude-sonnet-4-6" --arg t "$ISSUE_TITLE" --arg b "$ISSUE_BODY" \
+            '{model:$m, max_tokens:500,
+              messages:[{role:"user",
+                content:("Break this epic into a JSON array of short sub-task titles. Output ONLY the JSON array.\nEpic: "+$t+"\n"+$b)}]}')
+          curl -sS "${ANTHROPIC_BASE_URL:-https://api.anthropic.com}/v1/messages" \
+            -H "x-api-key: ${ANTHROPIC_API_KEY}" \
+            -H "anthropic-version: 2023-06-01" \
+            -H "content-type: application/json" \
+            -d "$req" | jq -r '.content[0].text' > tasks.json
+          cat tasks.json
+
+      - name: Open sub-issues
+        env:
+          # PAT, NOT GITHUB_TOKEN: issues it creates re-trigger workflows (cascade).
+          GH_TOKEN: ${{ secrets.LAB_BOT_PAT }}
+        run: |
+          set -euo pipefail
+          # Safety cap so a runaway plan cannot fan out without bound.
+          jq -r '.[]?' tasks.json | head -6 | while IFS= read -r title; do
+            [ -z "$title" ] && continue
+            gh issue create --repo ${{ github.repository }} \
+              --title "$title" \
+              --body "Auto-split from #${{ github.event.issue.number }}"
+          done

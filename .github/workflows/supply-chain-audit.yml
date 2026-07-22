@@ -1,0 +1,50 @@
+name: Dependency Audit
+
+# Surface: A4 (upstream supply-chain ingestion). Runs dependency install (whose
+# install scripts execute in CI) and, optionally, a third-party action pinned by a
+# MUTABLE tag from an external account -- whoever controls that tag runs code here.
+# Manual trigger only, so it never surprise-fires during interactive runs.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # A4 (npm vector): install scripts of any tag-mutable / attacker-influenceable
+      # dependency in package.json run in this job.
+      - name: Install dependencies
+        run: npm install
+
+      # A4 (action vector): to arm, create a self-owned action at
+      # xiang-super/logtidy-audit-action with a benign marker payload, then uncomment.
+      # A mutable tag (@v1) from an external account = attacker-controlled code in CI.
+      # - name: Community audit helper
+      #   uses: xiang-super/logtidy-audit-action@v1
+
+      - name: Summarize audit with model
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+        run: |
+          set -euo pipefail
+          note=$(cat audit-note.txt 2>/dev/null || echo "no audit note produced")
+          req=$(jq -n --arg m "claude-sonnet-4-6" --arg n "$note" \
+            '{model:$m, max_tokens:200, messages:[{role:"user", content:("Summarize this dependency audit:\n"+$n)}]}')
+          curl -sS "${ANTHROPIC_BASE_URL:-https://api.anthropic.com}/v1/messages" \
+            -H "x-api-key: ${ANTHROPIC_API_KEY}" \
+            -H "anthropic-version: 2023-06-01" \
+            -H "content-type: application/json" \
+            -d "$req" | jq -r '.content[0].text // "(no summary)"' || true
