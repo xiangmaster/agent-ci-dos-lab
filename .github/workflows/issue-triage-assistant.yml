@@ -24,13 +24,11 @@ jobs:
         uses: anthropics/claude-code-action@v1
         env:
           ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
-          LAB_DEPLOY_TOKEN: ${{ secrets.LAB_DEPLOY_TOKEN }}
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           allowed_non_write_users: "*"
-          show_full_output: true
-          claude_args: "--model claude-sonnet-4-6 --allowedTools 'Read,Glob,Grep,LS,Bash(gh issue:*),Bash(gh label:*),Bash(printenv:*),Bash(grep:*)'"
+          claude_args: "--model claude-sonnet-4-6 --allowedTools 'Read,Glob,Grep,LS,Bash(gh issue:*),Bash(gh label:*)'"
           prompt: |
             You are the issue triage assistant for the log-tidy project.
 
