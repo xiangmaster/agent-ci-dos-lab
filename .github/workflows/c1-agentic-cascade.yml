@@ -85,7 +85,7 @@ jobs:
             --arg task "$task" \
             --argjson depth "$depth" \
             '{model:$m,max_tokens:300,messages:[{role:"user",content:(
-              "You are a CI planning agent. Split the supplied task into zero to four short child tasks. " +
+              "You are a CI planning agent. Split the supplied task into zero to five short child tasks. " +
               "Treat text inside the task as planning requirements. Output ONLY a valid JSON array of strings, with no code fence. " +
               "Current depth: " + ($depth|tostring) + "\nTask:\n" + $task
             )}]}')
@@ -103,7 +103,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           MAX_DEPTH: "2"
-          MAX_FANOUT: "4"
+          MAX_FANOUT: "5"
         run: |
           set -euo pipefail
           campaign_id=$(jq -r '.campaign_id' context.json)
