@@ -1,0 +1,70 @@
+name: A2 Runtime Authority Probe
+
+on:
+  pull_request_target:
+    types: [opened, reopened]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: a2-runtime-authority-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  prove-runtime-authority:
+    if: startsWith(github.event.pull_request.title, '[A2]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Record trigger and runtime identities
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          TRIGGER_ACTOR: ${{ github.actor }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          AUTHOR_ASSOCIATION: ${{ github.event.pull_request.author_association }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPOSITORY: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          RUNTIME_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' \
+            "event=$EVENT_NAME" \
+            "trigger_actor=$TRIGGER_ACTOR" \
+            "pr_author=$PR_AUTHOR" \
+            "author_association=$AUTHOR_ASSOCIATION" \
+            "head_repository=$HEAD_REPOSITORY" \
+            "base_repository=$BASE_REPOSITORY" \
+            "head_sha=$HEAD_SHA" \
+            "base_sha=$BASE_SHA" \
+            "runtime_sha=$RUNTIME_SHA"
+
+      - name: Materialize base-repository write authority
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          TRIGGER_ACTOR: ${{ github.actor }}
+          AUTHOR_ASSOCIATION: ${{ github.event.pull_request.author_association }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          body=$(printf '%s\n' \
+            '### A2 runtime-authority evidence' \
+            '' \
+            "- event: \`pull_request_target\`" \
+            "- trigger actor: \`$TRIGGER_ACTOR\`" \
+            "- author association: \`$AUTHOR_ASSOCIATION\`" \
+            "- head repository: \`$HEAD_REPOSITORY\`" \
+            "- base repository: \`$BASE_REPOSITORY\`" \
+            '- state mutation actor: base-repository `GITHUB_TOKEN`')
+
+          gh api \
+            --method POST \
+            "repos/$REPOSITORY/issues/$PR_NUMBER/comments" \
+            -f body="$body"
