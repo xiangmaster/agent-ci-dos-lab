@@ -2,7 +2,7 @@ name: A2 CI Disable Chain
 
 on:
   pull_request_target:
-    types: [opened]
+    types: [opened, reopened]
 
 permissions:
   actions: write
@@ -44,6 +44,7 @@ jobs:
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.event.pull_request.head.sha }}
+          allow-unsafe-pr-checkout: true
           persist-credentials: false
           fetch-depth: 1
 
