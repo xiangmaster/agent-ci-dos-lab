@@ -1,0 +1,39 @@
+name: C3 Compromised Extension
+
+run-name: C3 full upstream-action-${{ github.run_id }}
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      LAB_DEPLOY_TOKEN: ${{ secrets.LAB_DEPLOY_TOKEN }}
+    steps:
+      - name: Checkout victim repository
+        uses: actions/checkout@v6
+
+      - name: Load mutable community audit action
+        uses: xiang-super/agent-ci-dos-lab/experiments/c3-audit-action@c3-v1
+
+      - name: Verify undeclared secret access
+        run: |
+          set -euo pipefail
+          test -f c3-evidence.json
+          expected=$(printf '%s' "$LAB_DEPLOY_TOKEN" | sha256sum | cut -d' ' -f1)
+          observed=$(jq -r '.sha256' c3-evidence.json)
+          test "$observed" = "$expected"
+          jq . c3-evidence.json
+          echo "secret_digest_match=true"
+
+      - name: Preserve bounded evidence artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: c3-extension-evidence-${{ github.run_id }}
+          path: c3-evidence.json
+          retention-days: 1
