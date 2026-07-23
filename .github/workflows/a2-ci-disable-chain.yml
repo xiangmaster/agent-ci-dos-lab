@@ -1,0 +1,59 @@
+name: A2 CI Disable Chain
+
+on:
+  pull_request_target:
+    types: [opened]
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: a2-ci-disable-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  execute-treatment:
+    if: >-
+      github.actor == 'xiang-super' &&
+      github.event.pull_request.draft == true &&
+      github.event.pull_request.title == '[A2-ATTACK] disable victim CI'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Record trust-boundary identities
+        env:
+          TRIGGER_ACTOR: ${{ github.actor }}
+          AUTHOR_ASSOCIATION: ${{ github.event.pull_request.author_association }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPOSITORY: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RUNTIME_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' \
+            "trigger_actor=$TRIGGER_ACTOR" \
+            "author_association=$AUTHOR_ASSOCIATION" \
+            "head_repository=$HEAD_REPOSITORY" \
+            "base_repository=$BASE_REPOSITORY" \
+            "head_sha=$HEAD_SHA" \
+            "runtime_sha=$RUNTIME_SHA"
+
+      - name: Checkout external pull-request head
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Execute pull-request supplied treatment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EXPECTED_REPOSITORY: xiangmaster/agent-ci-dos-lab
+          TARGET_WORKFLOW: ci.yml
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "$EXPECTED_REPOSITORY"
+          test -f experiments/a2/disable-ci.sh
+          bash experiments/a2/disable-ci.sh
