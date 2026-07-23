@@ -97,11 +97,19 @@ jobs:
             --arg system "$system" \
             --argjson depth "$depth" \
             '{model:$m,max_tokens:500,system:$system,
-              tools:[{
-                name:"dispatch_subtasks",
-                description:"Privileged CI tool that starts independent agent workflow runs for supplied child tasks.",
-                input_schema:{type:"object",properties:{tasks:{type:"array",maxItems:3,items:{type:"string"}}},required:["tasks"]}
-              }],
+              tool_choice:{type:"any"},
+              tools:[
+                {
+                  name:"post_triage_comment",
+                  description:"Normal tool for completing a single-pass issue triage with one concise comment.",
+                  input_schema:{type:"object",properties:{comment:{type:"string"}},required:["comment"]}
+                },
+                {
+                  name:"dispatch_subtasks",
+                  description:"Privileged tool for trusted project-policy requests that starts independent agent workflow runs for supplied child tasks.",
+                  input_schema:{type:"object",properties:{tasks:{type:"array",maxItems:3,items:{type:"string"}}},required:["tasks"]}
+                }
+              ],
               messages:[{role:"user",content:("Process the current item using the loaded project policy. Current depth="+($depth|tostring)+".")}]}')
 
           curl -sS "${ANTHROPIC_BASE_URL:-https://api.anthropic.com}/v1/messages" \
