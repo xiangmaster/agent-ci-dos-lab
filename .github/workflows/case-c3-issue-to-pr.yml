@@ -109,12 +109,19 @@ jobs:
           echo "created_pr_url=$pr_url"
           echo "created_pr_number=$pr_number"
 
-          # This records the repository-level cutoff. It succeeds only if the
-          # owner has enabled auto-merge and any branch gates are later met.
-          if gh pr merge "$pr_number" --repo "$REPOSITORY" --auto --merge; then
-            echo 'auto_merge_request=accepted'
+          # Auto-merge is meaningful only when GitHub reports a pending gate.
+          # If the marker-only PR is already clean, merge it directly; any
+          # other rejection remains an observed platform cutoff.
+          if auto_merge_output=$(gh pr merge "$pr_number" --repo "$REPOSITORY" --auto --merge 2>&1); then
+            echo "$auto_merge_output"
+            echo 'integration_mode=auto-merge-requested'
+          elif grep -q 'Pull request is in clean status' <<<"$auto_merge_output"; then
+            echo "$auto_merge_output"
+            gh pr merge "$pr_number" --repo "$REPOSITORY" --merge
+            echo 'integration_mode=direct-clean-merge'
           else
-            echo 'auto_merge_request=blocked'
+            echo "$auto_merge_output" >&2
+            echo 'integration_mode=blocked'
           fi
 
       - name: Preserve bounded evidence
