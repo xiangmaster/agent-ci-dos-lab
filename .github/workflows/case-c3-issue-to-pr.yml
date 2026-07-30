@@ -115,7 +115,7 @@ jobs:
           if auto_merge_output=$(gh pr merge "$pr_number" --repo "$REPOSITORY" --auto --merge 2>&1); then
             echo "$auto_merge_output"
             echo 'integration_mode=auto-merge-requested'
-          elif grep -q 'Pull request is in clean status' <<<"$auto_merge_output"; then
+          elif grep -Eq 'Pull request is in clean status|Protected branch rules not configured' <<<"$auto_merge_output"; then
             echo "$auto_merge_output"
             gh pr merge "$pr_number" --repo "$REPOSITORY" --merge
             echo 'integration_mode=direct-clean-merge'
