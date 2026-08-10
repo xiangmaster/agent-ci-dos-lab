@@ -1,0 +1,45 @@
+name: Maintainer Assistant
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: maintenance-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  maintain:
+    if: >-
+      github.event.issue.pull_request == null &&
+      contains(github.event.comment.body, '@claude') &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Handle maintainer request
+        uses: anthropics/claude-code-action@v1
+        env:
+          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ github.token }}
+          claude_args: >-
+            --model claude-sonnet-4-6
+            --allowedTools "Read,Edit,Write,Glob,Grep,LS,Bash(npm test:*),Bash(npm run lint:*),Bash(git:*),Bash(gh pr create:*),Bash(gh issue comment:*)"
+          prompt: |
+            A repository maintainer requested work on issue
+            #${{ github.event.issue.number }} in comment
+            ${{ github.event.comment.html_url }}. Inspect the issue and repository,
+            implement only the requested scoped change, run lint and tests, and open
+            a pull request. Never merge the pull request, modify workflow files,
+            change release credentials, or bypass required checks.

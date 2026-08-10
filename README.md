@@ -1,26 +1,33 @@
 # log-tidy
 
-`log-tidy` is a small TypeScript library for normalizing application log
-events before they are forwarded to observability pipelines. It accepts mixed
-JSON and NDJSON input, normalizes timestamps and severity levels, flattens
-error objects, and redacts sensitive fields.
+`log-tidy` is a TypeScript library and command-line tool for normalizing
+structured application logs before they enter an observability pipeline. It
+accepts newline-delimited JSON, maps common timestamp and severity formats to
+a stable event schema, recursively redacts sensitive fields, applies
+deterministic sampling, and reports malformed records without losing the rest
+of the stream.
 
-The project is intended for services that are migrating from ad-hoc logging to
-structured event streams and need a predictable pre-processor that can run in
-CLI tools, sidecars, or ingestion workers.
+The package is intended for ingestion workers, deployment sidecars, build
+pipelines, and local diagnostics where logs arrive from services with
+different conventions.
 
 ## Features
 
-- Normalize timestamps from ISO-8601 strings, epoch seconds, and epoch
-  milliseconds.
-- Coalesce common `level`, `lvl`, and `severity` strings into a canonical
-  severity ladder.
-- Flatten nested `error` objects into `error.*` fields.
-- Redact common secret-bearing keys such as `password`, `token`, and
-  `authorization`.
-- Parse newline-delimited JSON while preserving bad input as structured
-  diagnostics.
-- Apply deterministic sampling for high-volume debug streams.
+- ISO-8601, epoch-second, and epoch-millisecond timestamp normalization.
+- Severity aliases and numeric logger levels mapped to six canonical levels.
+- Configurable field aliases for heterogeneous producers.
+- Recursive key and path-based redaction, including arrays and nested headers.
+- Deterministic trace and debug sampling with a stable seed.
+- Bounded NDJSON parsing with structured per-line diagnostics.
+- Strict and best-effort processing modes.
+- NDJSON, JSON array, and human-readable output.
+- Library, batch, streaming, and CLI APIs.
+- Reproducible npm package manifests with SHA-256 verification.
+
+## Requirements
+
+- Node.js 20 or later
+- npm 10 or later for development
 
 ## Install
 
@@ -28,33 +35,84 @@ CLI tools, sidecars, or ingestion workers.
 npm install log-tidy
 ```
 
-## Usage
+## CLI
+
+Process a file:
+
+```bash
+log-tidy application.ndjson --config log-tidy.config.json --output normalized.ndjson
+```
+
+Use a pipe and emit readable output:
+
+```bash
+cat application.ndjson | log-tidy --format pretty --stats
+```
+
+Malformed records are reported to stderr. Valid records continue through the
+pipeline unless `--strict` is enabled.
+
+## Library API
 
 ```ts
-import { tidy, parseNdjson } from "log-tidy";
+import { LogProcessor, tidy } from "log-tidy";
 
 const event = tidy({
-  ts: 1718500000,
-  lvl: "WARN",
-  msg: "deprecated endpoint hit",
-  authorization: "Bearer secret",
+  timestamp: 1718500000,
+  severity: "WARN",
+  message: "request exceeded latency budget",
+  headers: { authorization: "Bearer example" },
 });
 
-const batch = parseNdjson('{"level":"error","message":"failed"}\n');
+const processor = new LogProcessor({
+  sampling: { debugRate: 0.1 },
+  redaction: { paths: ["request.headers.*"] },
+});
+
+const result = processor.processNdjson(input);
+console.log(result.events, result.diagnostics, result.stats);
 ```
+
+For large inputs, `processNdjsonStream` processes records incrementally without
+retaining the complete input or output in memory.
+
+## Configuration
+
+Configuration is JSON and is merged with secure defaults. A complete example
+is available at [`examples/log-tidy.config.json`](examples/log-tidy.config.json).
+See [`docs/configuration.md`](docs/configuration.md) for every option.
 
 ## Development
 
 ```bash
-npm install
-npm run build
-npm test
+npm ci
+npm run check
 ```
 
-## Operations
+Useful commands:
 
-Operational guidance lives in [docs/operations.md](docs/operations.md). The
-stable event format is documented in [docs/log-format.md](docs/log-format.md).
+| Command | Purpose |
+|---|---|
+| `npm run build` | Compile ESM JavaScript, declarations, and source maps. |
+| `npm run lint` | Run the strict TypeScript static checks. |
+| `npm test` | Build and execute unit and integration tests. |
+| `npm run test:coverage` | Execute tests with Node.js coverage. |
+| `npm pack` | Build the publishable package archive. |
+
+## Documentation
+
+- [Architecture](docs/architecture.md)
+- [Configuration](docs/configuration.md)
+- [CLI reference](docs/cli.md)
+- [Normalized event format](docs/log-format.md)
+- [Operational guidance](docs/operations.md)
+- [Release process](docs/releasing.md)
+
+## Security
+
+Never include production credentials or customer log data in issues. Please
+follow [SECURITY.md](SECURITY.md) for private vulnerability reporting and the
+project's supported-version policy.
 
 ## License
 

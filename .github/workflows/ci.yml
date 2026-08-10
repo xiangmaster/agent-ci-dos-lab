@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -13,22 +14,47 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-and-test:
+  quality:
+    name: Node ${{ matrix.node-version }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [20, 22]
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
 
-      - name: Install dependencies
-        run: npm install
-
-      - name: Build
-        run: npm run build
-
-      - name: Test
-        run: npm test
+  package:
+    name: Package candidate
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Build package candidate
+        run: |
+          mkdir -p artifacts
+          npm pack --pack-destination artifacts
+          node scripts/create-package-manifest.mjs artifacts
+      - name: Validate package candidate
+        run: node scripts/validate-package-manifest.mjs artifacts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package-candidate
+          path: artifacts/
+          retention-days: 14
+          if-no-files-found: error

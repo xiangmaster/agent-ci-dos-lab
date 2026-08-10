@@ -1,27 +1,40 @@
-# Log format
+# Normalized event format
 
-`log-tidy` emits one JSON object per normalized event.
+Every emitted event is a JSON object with `ts` and `level` fields. Additional
+application fields are preserved after configured aliases and error objects
+have been consumed.
 
-## Required fields
+## Core fields
 
-| Field | Type | Description |
-|---|---|---|
-| `ts` | string | ISO-8601 timestamp in UTC. |
-| `level` | string | One of `trace`, `debug`, `info`, `warn`, `error`, or `fatal`. |
+| Field | Type | Required | Description |
+|---|---|---:|---|
+| `ts` | string | yes | UTC ISO-8601 timestamp. |
+| `level` | string | yes | `trace`, `debug`, `info`, `warn`, `error`, or `fatal`. |
+| `msg` | string | no | Human-readable event message. |
+| `error.kind` | string | no | Error class or name. |
+| `error.message` | string | no | Error message. |
+| `error.stack` | string | no | Stack trace when provided. |
+| `error.code` | string/number | no | Application or platform error code. |
 
-## Optional fields
+Nested causes use `error.cause.*`, up to the configured implementation limit.
 
-| Field | Type | Description |
-|---|---|---|
-| `msg` | string | Human-readable event message. |
-| `error.message` | string | Flattened error message. |
-| `error.kind` | string | Flattened error class or name. |
-| `error.stack` | string | Stack trace, when available. |
+## Field aliases
 
-Additional application fields are preserved unless they match configured
-redaction keys.
+Default timestamp aliases are `ts`, `timestamp`, `time`, and `@timestamp`.
+Default level aliases are `level`, `lvl`, `severity`, and `severityText`.
+Message and error aliases can also be configured.
+
+When multiple aliases occur in one object, the first configured alias wins.
+Unused aliases are preserved as application fields only when they were not
+selected.
 
 ## Redaction
 
-The default redaction list covers common credential-bearing keys, including
-`authorization`, `password`, `secret`, `token`, `api_key`, and cookies.
+Redaction occurs after normalization and before sampling or serialization.
+Key matching is case-insensitive and recursive. Path patterns are dot-separated
+and support `*` for one path segment. The original event object is not mutated.
+
+## Compatibility
+
+New optional fields may be added in minor releases. Removing or changing the
+meaning of a core field requires a major release.

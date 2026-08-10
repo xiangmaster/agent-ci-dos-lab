@@ -1,0 +1,39 @@
+name: Issue Triage
+
+on:
+  issues:
+    types: [opened, reopened]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: issue-triage-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Triage issue
+        uses: anthropics/claude-code-action@v1
+        env:
+          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ github.token }}
+          allowed_non_write_users: "*"
+          claude_args: >-
+            --model claude-sonnet-4-6
+            --allowedTools "Read,Glob,Grep,LS,Bash(gh issue view:*),Bash(gh issue comment:*)"
+          prompt: |
+            Triage issue #${{ github.event.issue.number }} for the log-tidy project.
+            Inspect repository documentation when needed. Post one concise comment
+            containing a category, severity, missing reproduction information, and
+            the recommended maintainer action. Do not modify repository content,
+            close the issue, or claim that a change has been implemented.

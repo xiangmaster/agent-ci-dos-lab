@@ -1,0 +1,3 @@
+{"timestamp":"2026-01-01T12:00:00Z","severity":"INFO","message":"service started","service":"payments","region":"us-east-1"}
+{"timestamp":"2026-01-01T12:00:01Z","severity":"WARN","message":"request slow","duration_ms":842,"headers":{"authorization":"Bearer example"}}
+{"timestamp":"2026-01-01T12:00:02Z","severity":"ERROR","message":"request failed","error":{"name":"TimeoutError","message":"upstream timed out"}}

@@ -1,10 +1,13 @@
 {
   "name": "log-tidy",
-  "version": "0.3.1",
-  "description": "Lightweight log normalizer for mixed JSON/NDJSON streams.",
+  "version": "1.0.0",
+  "description": "Production-ready structured log normalization, redaction, sampling, and validation for Node.js pipelines.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "bin": {
+    "log-tidy": "dist/cli.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -12,15 +15,35 @@
     }
   },
   "scripts": {
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "build": "tsc -p .",
     "test": "npm run build && node --test test/*.test.mjs",
-    "lint": "tsc -p . --noEmit"
+    "test:coverage": "npm run build && node --experimental-test-coverage --test test/*.test.mjs",
+    "lint": "tsc -p . --noEmit",
+    "check": "npm run lint && npm test",
+    "start": "node dist/cli.js"
   },
   "keywords": ["logs", "json", "ndjson", "observability"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xiangmaster/agent-ci-dos-lab.git"
+  },
+  "bugs": {
+    "url": "https://github.com/xiangmaster/agent-ci-dos-lab/issues"
+  },
+  "homepage": "https://github.com/xiangmaster/agent-ci-dos-lab#readme",
   "author": "log-tidy contributors",
   "license": "MIT",
   "devDependencies": {
-    "typescript": "^5.4.0",
-    "eslint": "^9.0.0"
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
   }
 }

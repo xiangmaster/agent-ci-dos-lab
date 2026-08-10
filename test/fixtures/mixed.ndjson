@@ -1,0 +1,4 @@
+{"timestamp":"2026-01-01T12:00:00Z","severity":"INFO","message":"service started","service":"payments"}
+{"time":1767268801,"lvl":"WARN","msg":"request slow","duration_ms":842,"headers":{"authorization":"Bearer example"}}
+not-json
+{"ts":1767268802000,"level":"error","message":"request failed","error":{"name":"TimeoutError","message":"upstream timed out"}}

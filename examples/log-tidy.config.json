@@ -1,0 +1,17 @@
+{
+  "redaction": {
+    "keys": ["authorization", "password", "token", "api_key"],
+    "paths": ["request.headers.cookie", "*.credentials.*"],
+    "replacement": "[REDACTED]"
+  },
+  "sampling": {
+    "traceRate": 0.05,
+    "debugRate": 0.25,
+    "seed": "production"
+  },
+  "parser": {
+    "maxLineBytes": 1048576,
+    "strict": false
+  },
+  "output": "ndjson"
+}
