@@ -1,0 +1,122 @@
+name: Agent-Guided Staging Promotion
+
+on:
+  workflow_run:
+    workflows: [AI Test Planner]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+  deployments: write
+
+jobs:
+  promote:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout trusted promotion controller
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          path: controller
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Download Agent test plan
+        uses: actions/download-artifact@v4
+        with:
+          name: ai-test-plan
+          path: plan
+          github-token: ${{ github.token }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Validate Agent test plan
+        id: plan
+        env:
+          EXPECTED_RUN_ID: ${{ github.event.workflow_run.id }}
+          EXPECTED_REPOSITORY: ${{ github.repository }}
+        run: node controller/scripts/run-selected-tests.mjs plan/test-plan.json
+
+      - name: Checkout candidate revision
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.plan.outputs.head_repository }}
+          ref: ${{ steps.plan.outputs.head_sha }}
+          persist-credentials: false
+          path: candidate
+
+      - name: Install candidate dependencies
+        working-directory: candidate
+        run: npm ci
+
+      - name: Run Agent-selected smoke profile
+        if: steps.plan.outputs.test_profile == 'smoke'
+        working-directory: candidate
+        run: npm run test:smoke
+
+      - name: Run Agent-selected full profile
+        if: steps.plan.outputs.test_profile == 'full'
+        working-directory: candidate
+        run: npm run test:full
+
+      - name: Assemble staging bundle
+        env:
+          HEAD_SHA: ${{ steps.plan.outputs.head_sha }}
+          PR_NUMBER: ${{ steps.plan.outputs.pr_number }}
+          TEST_PROFILE: ${{ steps.plan.outputs.test_profile }}
+        run: |
+          mkdir -p staging-bundle
+          cp -R candidate/dist staging-bundle/dist
+          cp candidate/package.json staging-bundle/package.json
+          cp plan/test-plan.json staging-bundle/test-plan.json
+          node -e 'const fs=require("fs"); fs.writeFileSync("staging-bundle/promotion.json", JSON.stringify({head_sha:process.env.HEAD_SHA,pr_number:Number(process.env.PR_NUMBER),test_profile:process.env.TEST_PROFILE,run_id:process.env.GITHUB_RUN_ID},null,2)+"\n")'
+
+      - name: Create c2-staging deployment
+        id: deployment
+        uses: actions/github-script@v7
+        env:
+          HEAD_SHA: ${{ steps.plan.outputs.head_sha }}
+          PR_NUMBER: ${{ steps.plan.outputs.pr_number }}
+        with:
+          script: |
+            const deployment = await github.rest.repos.createDeployment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: process.env.HEAD_SHA,
+              environment: 'c2-staging',
+              description: `Agent-guided staging promotion for PR #${process.env.PR_NUMBER}`,
+              auto_merge: false,
+              required_contexts: [],
+              transient_environment: true,
+              production_environment: false,
+            });
+            core.setOutput('deployment_id', String(deployment.data.id));
+
+      - name: Upload deployed staging bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: c2-staging-bundle
+          path: staging-bundle
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Mark c2-staging deployment successful
+        uses: actions/github-script@v7
+        env:
+          DEPLOYMENT_ID: ${{ steps.deployment.outputs.deployment_id }}
+        with:
+          script: |
+            await github.rest.repos.createDeploymentStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              deployment_id: Number(process.env.DEPLOYMENT_ID),
+              state: 'success',
+              log_url: `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              description: 'Agent-selected test profile passed; candidate promoted',
+              auto_inactive: true,
+            });
