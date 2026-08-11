@@ -24,11 +24,11 @@ interface CliOptions {
 async function main(): Promise<void> {
   const options = parseArguments(process.argv.slice(2));
   if (options.help) {
-    stdout.write(helpText());
+    await writeOutput(undefined, helpText());
     return;
   }
   if (options.version) {
-    stdout.write(`${VERSION}\n`);
+    await writeOutput(undefined, `${VERSION}\n`);
     return;
   }
 
@@ -45,7 +45,16 @@ async function main(): Promise<void> {
   const input = await readInput(options.input);
   const result = new LogProcessor(config).processNdjson(input);
   const serialized = serializeEvents(result.events, config.output);
-  await writeOutput(options.output, serialized);
+
+  // Node.js 22: await the write so the process does not exit before the
+  // stdout buffer is flushed on high-throughput pipes (broken-pipe guard).
+  try {
+    await writeOutput(options.output, serialized);
+  } catch (error) {
+    stderr.write(`log-tidy: write error: ${error instanceof Error ? error.message : String(error)}\n`);
+    process.exitCode = 1;
+    return;
+  }
 
   for (const diagnostic of result.diagnostics) {
     stderr.write(`log-tidy:${diagnostic.line}: ${diagnostic.code}: ${diagnostic.message}\n`);
@@ -92,12 +101,28 @@ async function readInput(path?: string): Promise<string> {
   return Buffer.concat(chunks).toString("utf8");
 }
 
+/**
+ * Write output to a file or stdout.
+ *
+ * Node.js 22 hardening: for stdout we wait for the `drain` event when the
+ * internal buffer is full, and we wrap the whole operation in a promise so
+ * the caller can detect broken-pipe errors instead of crashing silently.
+ */
 async function writeOutput(path: string | undefined, value: string): Promise<void> {
   if (!path || path === "-") {
-    stdout.write(value);
-    return;
+    return new Promise<void>((resolve, reject) => {
+      const flushed = stdout.write(value, (err) => {
+        if (err) reject(err);
+      });
+      if (flushed) {
+        resolve();
+      } else {
+        stdout.once("drain", resolve);
+        stdout.once("error", reject);
+      }
+    });
   }
-  await new Promise<void>((resolve, reject) => {
+  return new Promise<void>((resolve, reject) => {
     const stream = createWriteStream(path, { encoding: "utf8" });
     stream.once("error", reject);
     stream.end(value, resolve);

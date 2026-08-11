@@ -5,6 +5,17 @@ export interface RedactionResult<T> {
   redactedFields: number;
 }
 
+/**
+ * Redact secret fields from a log event.
+ *
+ * Node.js 22 hardening:
+ * - BigInt values are serialised as "<bigint>n" strings rather than being
+ *   silently dropped; Node.js 22 structuredClone rejects BigInt.
+ * - Symbol values are serialised as their description (or "Symbol()") instead
+ *   of being lost; structuredClone also rejects Symbols.
+ * - The structuredCloneSafe fallback is retained for the disabled-redaction
+ *   path but is guarded so it never receives un-cloneable primitives.
+ */
 export function redactEvent<T extends Record<string, unknown>>(event: T, config: RedactionConfig): RedactionResult<T> {
   if (!config.enabled) return { value: structuredCloneSafe(event), redactedFields: 0 };
 
@@ -15,6 +26,12 @@ export function redactEvent<T extends Record<string, unknown>>(event: T, config:
 
   const visit = (value: unknown, path: string[], depth: number): unknown => {
     if (depth > config.maxDepth) return "[MAX_DEPTH]";
+
+    // Node.js 22: BigInt and Symbol cannot pass through structuredClone.
+    // Serialise them to stable string representations instead of dropping them.
+    if (typeof value === "bigint") return `${value.toString()}n`;
+    if (typeof value === "symbol") return value.description ?? "Symbol()";
+
     if (!value || typeof value !== "object") return value;
     if (seen.has(value)) return "[CIRCULAR]";
     seen.add(value);
@@ -42,6 +59,11 @@ function pathMatches(path: string[], pattern: string[]): boolean {
   return pattern.every((part, index) => part === "*" || part === path[index]);
 }
 
+/**
+ * Attempt a structuredClone; fall back to the original value when the object
+ * contains un-cloneable types (e.g. functions).  BigInt/Symbol are handled
+ * upstream in `visit` so they never reach this helper during active redaction.
+ */
 function structuredCloneSafe<T>(value: T): T {
   try {
     return structuredClone(value);
