@@ -96,6 +96,8 @@ Useful commands:
 | `npm run build` | Compile ESM JavaScript, declarations, and source maps. |
 | `npm run lint` | Run the strict TypeScript static checks. |
 | `npm test` | Build and execute unit and integration tests. |
+| `npm run test:smoke` | Execute the fast pull-request test subset. |
+| `npm run test:full` | Execute unit and critical compatibility tests. |
 | `npm run test:coverage` | Execute tests with Node.js coverage. |
 | `npm pack` | Build the publishable package archive. |
 
