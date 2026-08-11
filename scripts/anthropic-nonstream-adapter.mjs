@@ -97,7 +97,8 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
-  if (request.method !== "POST" || request.url !== "/v1/messages") {
+  if (request.method !== "POST" || !request.url.startsWith("/v1/messages")) {
+    console.log(`adapter_reject method=${request.method} url=${request.url}`);
     response.writeHead(404).end();
     return;
   }
@@ -107,6 +108,7 @@ const server = http.createServer(async (request, response) => {
     for await (const chunk of request) chunks.push(chunk);
     const payload = JSON.parse(Buffer.concat(chunks).toString("utf8"));
     const wantsStream = payload.stream === true;
+    console.log(`adapter_request model=${payload.model} stream=${wantsStream}`);
     payload.stream = false;
 
     const headers = {
@@ -125,6 +127,7 @@ const server = http.createServer(async (request, response) => {
       signal: AbortSignal.timeout(180_000),
     });
     const body = await upstream.text();
+    console.log(`adapter_upstream status=${upstream.status} bytes=${Buffer.byteLength(body)}`);
 
     if (!upstream.ok) {
       response.writeHead(upstream.status, { "content-type": "application/json" });

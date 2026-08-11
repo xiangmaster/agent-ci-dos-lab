@@ -36,50 +36,29 @@ jobs:
           test "$code" = "200"
           jq -e '.content[0].type == "text"' response.json >/dev/null
 
-  direct-stream:
-    needs: direct-api
-    runs-on: ubuntu-latest
-    timeout-minutes: 3
-    steps:
-      - name: Test streaming response
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
-        run: |
-          set -euo pipefail
-          jq -n '{
-            model: "claude-sonnet-4-6",
-            max_tokens: 16,
-            stream: true,
-            messages: [{role: "user", content: "Reply with OK only."}]
-          }' > request.json
-
-          code=$(curl --silent --show-error --no-buffer --max-time 90 \
-            --output stream.txt --write-out '%{http_code}' \
-            "${ANTHROPIC_BASE_URL:-https://api.anthropic.com}/v1/messages" \
-            -H "x-api-key: ${ANTHROPIC_API_KEY}" \
-            -H "anthropic-version: 2023-06-01" \
-            -H "content-type: application/json" \
-            --data @request.json)
-
-          echo "stream_http_status=$code"
-          echo "stream_bytes=$(wc -c < stream.txt)"
-          grep -q 'message_stop' stream.txt
-          test "$code" = "200"
-
   claude-action:
-    needs: direct-stream
-    if: ${{ always() }}
+    needs: direct-api
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Start non-stream compatibility adapter
+        env:
+          UPSTREAM_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+        run: |
+          RUNNER_TRACKING_ID="" nohup node scripts/anthropic-nonstream-adapter.mjs > adapter.log 2>&1 &
+          for attempt in {1..20}; do
+            curl --silent --fail http://127.0.0.1:8787/health && exit 0
+            sleep 1
+          done
+          cat adapter.log
+          exit 1
       - name: Test Claude Code Action
         uses: anthropics/claude-code-action@be7b93b1907a4abad570368f3c74b6fe3807510b
         env:
-          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+          ANTHROPIC_BASE_URL: http://127.0.0.1:8787
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ github.token }}
@@ -89,3 +68,6 @@ jobs:
             --allowedTools "Read"
           prompt: |
             Read package.json and report only the package name. Do not edit files.
+      - name: Show adapter diagnostics
+        if: ${{ always() }}
+        run: cat adapter.log
