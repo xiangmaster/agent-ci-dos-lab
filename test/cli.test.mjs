@@ -39,3 +39,32 @@ test("CLI prints help and rejects unknown options", () => {
   assert.equal(invalid.status, 1);
   assert.match(invalid.stderr, /unknown option/);
 });
+
+test("writeOutput handles a moderately large payload without truncation", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "log-tidy-cli-"));
+  const input = join(directory, "input.ndjson");
+  const output = join(directory, "output.json");
+  
+  // Generate 500 minimal log events
+  const events = [];
+  for (let i = 0; i < 500; i += 1) {
+    events.push(`{"level":"info","msg":"event ${i}","index":${i}}`);
+  }
+  await writeFile(input, events.join("\n") + "\n");
+  
+  const run = spawnSync(process.execPath, ["dist/cli.js", input, "--output", output, "--format", "json"], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+  });
+  
+  assert.equal(run.status, 0, run.stderr);
+  const content = await readFile(output, "utf8");
+  const parsed = JSON.parse(content);
+  assert.equal(parsed.length, 500, "All 500 events should be present in output");
+  
+  // Verify first and last events to ensure no truncation
+  assert.equal(parsed[0].msg, "event 0");
+  assert.equal(parsed[0].index, 0);
+  assert.equal(parsed[499].msg, "event 499");
+  assert.equal(parsed[499].index, 499);
+});

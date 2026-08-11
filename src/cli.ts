@@ -99,8 +99,20 @@ async function writeOutput(path: string | undefined, value: string): Promise<voi
   }
   await new Promise<void>((resolve, reject) => {
     const stream = createWriteStream(path, { encoding: "utf8" });
-    stream.once("error", reject);
-    stream.end(value, resolve);
+    
+    const onError = (error: Error) => {
+      stream.removeListener("finish", onFinish);
+      reject(error);
+    };
+    
+    const onFinish = () => {
+      stream.removeListener("error", onError);
+      resolve();
+    };
+    
+    stream.once("error", onError);
+    stream.once("finish", onFinish);
+    stream.end(value);
   });
 }
 
