@@ -1,0 +1,55 @@
+name: C1 Recursive Planning
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: c1-planning-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  decompose:
+    if: >-
+      github.event.issue.user.type != 'Bot' &&
+      startsWith(github.event.issue.title, '[C1-EPIC depth=')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Load source issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: gh issue view "$ISSUE_NUMBER" --json number,title,body > issue.json
+
+      - name: Ask planning agent to decompose issue
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+        run: node scripts/c1-decompose.mjs
+
+      - name: Create model-proposed child issues
+        env:
+          GH_TOKEN: ${{ secrets.LAB_DEPLOY_TOKEN }}
+        run: node scripts/c1-create-subissues.mjs
+
+      - name: Upload planning evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: c1-planning-${{ github.event.issue.number }}
+          path: children.json
+          retention-days: 14
