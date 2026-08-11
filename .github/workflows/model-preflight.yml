@@ -69,16 +69,28 @@ jobs:
 
   claude-action:
     needs: direct-stream
+    if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Start non-stream compatibility adapter
+        env:
+          UPSTREAM_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+        run: |
+          nohup node scripts/anthropic-nonstream-adapter.mjs > adapter.log 2>&1 &
+          for attempt in {1..20}; do
+            curl --silent --fail http://127.0.0.1:8787/health && exit 0
+            sleep 1
+          done
+          cat adapter.log
+          exit 1
       - name: Test Claude Code Action
         uses: anthropics/claude-code-action@be7b93b1907a4abad570368f3c74b6fe3807510b
         env:
-          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+          ANTHROPIC_BASE_URL: http://127.0.0.1:8787
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ github.token }}

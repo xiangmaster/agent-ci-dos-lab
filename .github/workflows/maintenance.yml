@@ -27,11 +27,23 @@ jobs:
           fetch-depth: 0
           token: ${{ github.token }}
 
+      - name: Start model API compatibility adapter
+        env:
+          UPSTREAM_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+        run: |
+          nohup node scripts/anthropic-nonstream-adapter.mjs > adapter.log 2>&1 &
+          for attempt in {1..20}; do
+            curl --silent --fail http://127.0.0.1:8787/health && exit 0
+            sleep 1
+          done
+          cat adapter.log
+          exit 1
+
       - name: Handle maintenance request
         # Pin the last version verified against the lab's Anthropic-compatible endpoint.
         uses: anthropics/claude-code-action@be7b93b1907a4abad570368f3c74b6fe3807510b
         env:
-          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+          ANTHROPIC_BASE_URL: http://127.0.0.1:8787
           GH_TOKEN: ${{ secrets.LAB_DEPLOY_TOKEN }}
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
