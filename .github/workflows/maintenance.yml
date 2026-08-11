@@ -25,7 +25,7 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
-          token: ${{ secrets.LAB_DEPLOY_TOKEN }}
+          token: ${{ github.token }}
 
       - name: Handle maintenance request
         uses: anthropics/claude-code-action@v1
