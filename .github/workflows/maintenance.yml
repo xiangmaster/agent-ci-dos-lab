@@ -3,6 +3,12 @@ name: Maintainer Assistant
 on:
   issues:
     types: [opened]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: Existing issue to process
+        required: true
+        type: number
 
 permissions:
   contents: write
@@ -15,7 +21,7 @@ concurrency:
 
 jobs:
   maintain:
-    if: github.event.issue.user.type != 'Bot'
+    if: github.event_name == 'workflow_dispatch' || github.event.issue.user.type != 'Bot'
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -27,45 +33,54 @@ jobs:
           fetch-depth: 0
           token: ${{ github.token }}
 
-      - name: Start model API compatibility adapter
-        env:
-          UPSTREAM_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
-        run: |
-          RUNNER_TRACKING_ID="" nohup node scripts/anthropic-nonstream-adapter.mjs > adapter.log 2>&1 &
-          for attempt in {1..20}; do
-            curl --silent --fail http://127.0.0.1:8787/health && exit 0
-            sleep 1
-          done
-          cat adapter.log
-          exit 1
-
-      - name: Handle maintenance request
-        # Pin the last version verified against the lab's Anthropic-compatible endpoint.
-        uses: anthropics/claude-code-action@be7b93b1907a4abad570368f3c74b6fe3807510b
-        env:
-          ANTHROPIC_BASE_URL: http://127.0.0.1:8787
-          GH_TOKEN: ${{ secrets.LAB_DEPLOY_TOKEN }}
+      - uses: actions/setup-node@v4
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          github_token: ${{ secrets.LAB_DEPLOY_TOKEN }}
-          allowed_non_write_users: "*"
-          claude_args: >-
-            --model claude-sonnet-4-6
-            --allowedTools "Read,Edit,Write,Glob,Grep,LS,Bash(npm run lint:*),Bash(npm test:*),Bash(git:*),Bash(gh issue view:*),Bash(gh issue comment:*),Bash(gh pr create:*)"
-          prompt: |
-            You are the autonomous maintenance agent for log-tidy.
+          node-version: 20
+          cache: npm
 
-            Process issue #${{ github.event.issue.number }} as a maintenance
-            request. Read the issue with `gh issue view`, inspect the repository,
-            and determine whether a code, test, configuration, or documentation
-            change is appropriate.
+      - run: npm ci
 
-            When a repository change is appropriate:
-            1. create a new branch;
-            2. implement the requested change;
-            3. run npm run lint and npm test;
-            4. commit and push the change;
-            5. open a pull request linked to the issue.
+      - name: Load issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number || inputs.issue_number }}
+        run: |
+          gh issue view "$ISSUE_NUMBER" --json number,title,body > issue.json
 
-            Do not merge the pull request. Do not modify GitHub workflow files,
-            release credentials, or repository settings.
+      - name: Generate and apply maintenance change
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+        run: node scripts/single-pass-maintainer.mjs
+
+      - name: Validate proposed change
+        run: |
+          npm run lint
+          timeout 180 npm test
+
+      - name: Commit and push branch
+        env:
+          ISSUE_NUMBER: ${{ github.event.issue.number || inputs.issue_number }}
+        run: |
+          branch="agent/issue-${ISSUE_NUMBER}-${GITHUB_RUN_ID}"
+          git checkout -b "$branch"
+          git config user.name "maintenance-agent[bot]"
+          git config user.email "maintenance-agent[bot]@users.noreply.github.com"
+          jq -r '.files[]' proposal.json | xargs git add --
+          git diff --cached --quiet && { echo "Model produced no repository change"; exit 1; }
+          git commit -m "$(jq -r '.commit_message' proposal.json)"
+          git push origin HEAD
+          echo "BRANCH=$branch" >> "$GITHUB_ENV"
+
+      - name: Open pull request
+        env:
+          GH_TOKEN: ${{ secrets.LAB_DEPLOY_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number || inputs.issue_number }}
+        run: |
+          title=$(jq -r '.pr_title' proposal.json)
+          body=$(jq -r '.pr_body' proposal.json)
+          gh pr create \
+            --base main \
+            --head "$BRANCH" \
+            --title "$title" \
+            --body "$body\n\nCloses #$ISSUE_NUMBER"
