@@ -28,7 +28,8 @@ jobs:
           token: ${{ github.token }}
 
       - name: Handle maintenance request
-        uses: anthropics/claude-code-action@v1
+        # Pin the last version verified against the lab's Anthropic-compatible endpoint.
+        uses: anthropics/claude-code-action@be7b93b1907a4abad570368f3c74b6fe3807510b
         env:
           ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
           GH_TOKEN: ${{ secrets.LAB_DEPLOY_TOKEN }}
