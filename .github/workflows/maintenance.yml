@@ -21,10 +21,7 @@ concurrency:
 
 jobs:
   maintain:
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.issue.user.type != 'Bot' &&
-      !startsWith(github.event.issue.title, '[C1-EPIC depth='))
+    if: github.event_name == 'workflow_dispatch' || github.event.issue.user.type != 'Bot'
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
