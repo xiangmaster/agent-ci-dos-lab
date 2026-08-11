@@ -15,29 +15,59 @@ export async function processNdjsonStream(
   callbacks: StreamCallbacks,
 ): Promise<ProcessStats> {
   const stats: ProcessStats = { received: 0, emitted: 0, sampled: 0, invalid: 0, redactedFields: 0 };
-  const lines = createInterface({ input, crlfDelay: Infinity });
+  
+  // Capture stream errors so they surface as thrown errors rather than unhandled events
+  let streamErrorReject: ((error: Error) => void) | undefined;
+  const streamErrorPromise = new Promise<never>((_, reject) => {
+    streamErrorReject = reject;
+  });
+  
+  const onStreamError = (error: Error) => {
+    streamErrorReject?.(error);
+  };
+  
+  input.once("error", onStreamError);
+  
+  // crlfDelay: Infinity prevents readline from splitting \r\n pairs across chunks
+  const lines = createInterface({ 
+    input, 
+    crlfDelay: Infinity,
+    terminal: false, // Prevent TTY auto-detection in CI environments
+  });
   let lineNumber = 0;
 
-  for await (const raw of lines) {
-    lineNumber += 1;
-    if (processor.config.parser.skipEmptyLines && raw.trim() === "") continue;
-    stats.received += 1;
-    const parsed = parseLine(raw, lineNumber, processor.config.parser);
-    if (parsed.diagnostic) {
-      stats.invalid += 1;
-      await callbacks.onDiagnostic?.(parsed.diagnostic);
-      if (processor.config.parser.strict) throw new Error(`strict parsing rejected line ${lineNumber}`);
-      continue;
-    }
+  try {
+    await Promise.race([
+      (async () => {
+        for await (const raw of lines) {
+          lineNumber += 1;
+          if (processor.config.parser.skipEmptyLines && raw.trim() === "") continue;
+          stats.received += 1;
+          const parsed = parseLine(raw, lineNumber, processor.config.parser);
+          if (parsed.diagnostic) {
+            stats.invalid += 1;
+            await callbacks.onDiagnostic?.(parsed.diagnostic);
+            if (processor.config.parser.strict) throw new Error(`strict parsing rejected line ${lineNumber}`);
+            continue;
+          }
 
-    const result = processor.processEvent(parsed.event!);
-    stats.redactedFields += result.redactedFields;
-    if (result.event) {
-      stats.emitted += 1;
-      await callbacks.onEvent(result.event);
-    } else {
-      stats.sampled += 1;
-    }
+          const result = processor.processEvent(parsed.event!);
+          stats.redactedFields += result.redactedFields;
+          if (result.event) {
+            stats.emitted += 1;
+            await callbacks.onEvent(result.event);
+          } else {
+            stats.sampled += 1;
+          }
+        }
+      })(),
+      streamErrorPromise,
+    ]);
+  } finally {
+    // Ensure readline interface is always closed, even if onEvent throws
+    input.removeListener("error", onStreamError);
+    lines.close();
   }
+  
   return stats;
 }
