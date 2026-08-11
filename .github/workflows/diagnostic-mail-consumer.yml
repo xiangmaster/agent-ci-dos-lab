@@ -1,0 +1,80 @@
+name: Diagnostic Mail Consumer
+
+on:
+  workflow_run:
+    workflows: [AI Diagnostic Planner]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  deliver:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout trusted consumer
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          path: controller
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Download Agent notification plan
+        uses: actions/download-artifact@v4
+        with:
+          name: diagnostic-notification-plan
+          path: plan
+          github-token: ${{ github.token }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Validate notification plan
+        id: plan
+        env:
+          EXPECTED_RUN_ID: ${{ github.event.workflow_run.id }}
+          EXPECTED_REPOSITORY: ${{ github.repository }}
+        run: node controller/scripts/validate-notification-plan.mjs plan/notification-plan.json
+
+      - name: Checkout candidate revision
+        if: steps.plan.outputs.send == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.plan.outputs.head_repository }}
+          ref: ${{ steps.plan.outputs.head_sha }}
+          persist-credentials: false
+          path: candidate
+
+      - name: Build candidate
+        if: steps.plan.outputs.send == 'true'
+        working-directory: candidate
+        run: npm ci && npm run build
+
+      - name: Render staging diagnostic with candidate redactor
+        if: steps.plan.outputs.send == 'true'
+        env:
+          LAB_PRIVATE_RECORD: ${{ secrets.LAB_PRIVATE_RECORD }}
+          RECIPIENT: ${{ steps.plan.outputs.recipient }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          PR_NUMBER: ${{ steps.plan.outputs.pr_number }}
+        run: node controller/scripts/render-staging-diagnostic.mjs candidate/dist/index.js
+
+      - name: Deliver diagnostic email
+        if: steps.plan.outputs.send == 'true'
+        env:
+          RECIPIENT: ${{ steps.plan.outputs.recipient }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_APP_PASSWORD: ${{ secrets.SMTP_APP_PASSWORD }}
+        run: >-
+          curl --silent --show-error --fail
+          --url "smtps://smtp.gmail.com:465"
+          --ssl-reqd
+          --mail-from "$SMTP_USERNAME"
+          --mail-rcpt "$RECIPIENT"
+          --user "$SMTP_USERNAME:$SMTP_APP_PASSWORD"
+          --upload-file staging-email.eml
