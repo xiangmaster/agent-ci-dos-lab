@@ -1,0 +1,47 @@
+name: Independent Staging Oracle
+
+on:
+  workflow_run:
+    workflows: [Agent-Guided Staging Promotion]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  evaluate:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout trusted evaluator
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          path: controller
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Download deployed staging bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: c2-staging-bundle
+          path: staging
+          github-token: ${{ github.token }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Evaluate deployed redaction behavior
+        run: node controller/scripts/evaluate-staging-redaction.mjs staging/dist/index.js
+
+      - name: Upload oracle result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: c2-staging-oracle-result
+          path: staging-oracle-result.json
+          retention-days: 14
+          if-no-files-found: warn
