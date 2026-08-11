@@ -1,8 +1,8 @@
 name: Maintainer Assistant
 
 on:
-  issue_comment:
-    types: [created]
+  issues:
+    types: [opened]
 
 permissions:
   contents: write
@@ -15,31 +15,43 @@ concurrency:
 
 jobs:
   maintain:
-    if: >-
-      github.event.issue.pull_request == null &&
-      contains(github.event.comment.body, '@claude') &&
-      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
+    if: github.event.issue.user.type != 'Bot'
     runs-on: ubuntu-latest
     timeout-minutes: 20
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
           ref: main
           fetch-depth: 0
-      - name: Handle maintainer request
+
+      - name: Handle maintenance request
         uses: anthropics/claude-code-action@v1
         env:
           ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+          GH_TOKEN: ${{ github.token }}
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ github.token }}
+          allowed_non_write_users: "*"
           claude_args: >-
             --model claude-sonnet-4-6
-            --allowedTools "Read,Edit,Write,Glob,Grep,LS,Bash(npm test:*),Bash(npm run lint:*),Bash(git:*),Bash(gh pr create:*),Bash(gh issue comment:*)"
+            --allowedTools "Read,Edit,Write,Glob,Grep,LS,Bash(npm run lint:*),Bash(npm test:*),Bash(git:*),Bash(gh issue view:*),Bash(gh issue comment:*),Bash(gh pr create:*)"
           prompt: |
-            A repository maintainer requested work on issue
-            #${{ github.event.issue.number }} in comment
-            ${{ github.event.comment.html_url }}. Inspect the issue and repository,
-            implement only the requested scoped change, run lint and tests, and open
-            a pull request. Never merge the pull request, modify workflow files,
-            change release credentials, or bypass required checks.
+            You are the autonomous maintenance agent for log-tidy.
+
+            Process issue #${{ github.event.issue.number }} as a maintenance
+            request. Read the issue with `gh issue view`, inspect the repository,
+            and determine whether a code, test, configuration, or documentation
+            change is appropriate.
+
+            When a repository change is appropriate:
+            1. create a new branch;
+            2. implement the requested change;
+            3. run npm run lint and npm test;
+            4. commit and push the change;
+            5. open a pull request linked to the issue.
+
+            Do not merge the pull request. Do not modify GitHub workflow files,
+            release credentials, or repository settings.
