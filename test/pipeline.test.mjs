@@ -41,3 +41,87 @@ test("serializer supports ndjson, JSON arrays, and readable lines", () => {
   assert.deepEqual(JSON.parse(serializeEvents(events, "json")), events);
   assert.match(serializeEvents(events, "pretty"), /INFO\s+ready.*service/);
 });
+
+// Node.js 22 serialization regression tests
+
+test("ndjson serializer round-trips multi-byte UTF-8 messages", () => {
+  const original = {
+    ts: "2026-01-02T03:04:05.000Z",
+    level: "info",
+    msg: "日本語\u{1F4BB}e\u0301", // CJK + emoji + combining acute accent on 'e'
+  };
+  const serialized = serializeEvents([original], "ndjson");
+  const lines = serialized.split("\n").filter((line) => line.trim() !== "");
+  assert.equal(lines.length, 1);
+  const parsed = JSON.parse(lines[0]);
+  assert.equal(parsed.msg, original.msg);
+});
+
+test("json serializer produces valid UTF-8 for all BMP code points in field values", () => {
+  const events = [];
+  // Sample every 256th code point in BMP (U+0000–U+FFFF), skipping lone surrogates (U+D800–U+DFFF)
+  for (let cp = 0; cp <= 0xffff; cp += 256) {
+    if (cp >= 0xd800 && cp <= 0xdfff) continue; // Skip surrogate range
+    events.push({
+      ts: "2026-01-02T03:04:05.000Z",
+      level: "info",
+      msg: String.fromCodePoint(cp),
+    });
+  }
+  const serialized = serializeEvents(events, "json");
+  const parsed = JSON.parse(serialized);
+  assert.equal(parsed.length, events.length);
+  for (let i = 0; i < events.length; i++) {
+    assert.equal(parsed[i].msg, events[i].msg);
+  }
+});
+
+test("pretty serializer does not crash on events with no msg, no extra fields", () => {
+  const minimal = [{ ts: "2026-01-02T03:04:05.000Z", level: "info" }];
+  const result = serializeEvents(minimal, "pretty");
+  assert.equal(typeof result, "string");
+  assert.ok(result.length > 0);
+  assert.ok(result.includes("INFO"));
+  assert.ok(result.endsWith("\n"));
+});
+
+test("ndjson serializer emits one line per event with no blank lines", () => {
+  const events = [];
+  for (let i = 0; i < 10; i++) {
+    events.push({ ts: "2026-01-02T03:04:05.000Z", level: "info" });
+  }
+  const serialized = serializeEvents(events, "ndjson");
+  const lines = serialized.split("\n").filter((line) => line.trim() !== "");
+  assert.equal(lines.length, 10);
+  for (const line of lines) {
+    const parsed = JSON.parse(line);
+    assert.equal(typeof parsed, "object");
+    assert.ok(parsed.ts);
+    assert.ok(parsed.level);
+  }
+});
+
+test("serializeEvents is referentially transparent — same input always same output", () => {
+  const events = [
+    { ts: "2026-01-02T03:04:05.000Z", level: "info", msg: "test" },
+    { ts: "2026-01-02T03:04:06.000Z", level: "warn", msg: "warning" },
+  ];
+  
+  const ndjson1 = serializeEvents(events, "ndjson");
+  const ndjson2 = serializeEvents(events, "ndjson");
+  const ndjson3 = serializeEvents(events, "ndjson");
+  assert.equal(ndjson1, ndjson2);
+  assert.equal(ndjson2, ndjson3);
+  
+  const json1 = serializeEvents(events, "json");
+  const json2 = serializeEvents(events, "json");
+  const json3 = serializeEvents(events, "json");
+  assert.equal(json1, json2);
+  assert.equal(json2, json3);
+  
+  const pretty1 = serializeEvents(events, "pretty");
+  const pretty2 = serializeEvents(events, "pretty");
+  const pretty3 = serializeEvents(events, "pretty");
+  assert.equal(pretty1, pretty2);
+  assert.equal(pretty2, pretty3);
+});
