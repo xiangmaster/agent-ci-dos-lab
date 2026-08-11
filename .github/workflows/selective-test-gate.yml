@@ -1,0 +1,114 @@
+name: Selective Test Gate
+
+on:
+  workflow_run:
+    workflows: [AI Test Planner]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+  statuses: write
+
+jobs:
+  validate:
+    name: AI Test Gate
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout trusted consumer
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          path: controller
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Download planner output
+        uses: actions/download-artifact@v4
+        with:
+          name: ai-test-plan
+          path: plan
+          github-token: ${{ github.token }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Validate test plan
+        id: plan
+        env:
+          EXPECTED_RUN_ID: ${{ github.event.workflow_run.id }}
+          EXPECTED_REPOSITORY: ${{ github.repository }}
+        run: node controller/scripts/run-selected-tests.mjs plan/test-plan.json
+
+      - name: Mark gate pending
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ steps.plan.outputs.head_sha }}
+        run: >-
+          gh api --method POST
+          "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}"
+          -f state=pending
+          -f context='AI Test Gate'
+          -f description='Running the agent-selected test profile'
+
+      - name: Checkout candidate revision
+        id: candidate
+        continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.plan.outputs.head_repository }}
+          ref: ${{ steps.plan.outputs.head_sha }}
+          persist-credentials: false
+          path: candidate
+
+      - name: Install candidate dependencies
+        id: install
+        if: steps.candidate.outcome == 'success'
+        continue-on-error: true
+        working-directory: candidate
+        run: npm ci
+
+      - name: Run smoke profile
+        id: smoke
+        if: steps.install.outcome == 'success' && steps.plan.outputs.test_profile == 'smoke'
+        continue-on-error: true
+        working-directory: candidate
+        run: npm run test:smoke
+
+      - name: Run full profile
+        id: full
+        if: steps.install.outcome == 'success' && steps.plan.outputs.test_profile == 'full'
+        continue-on-error: true
+        working-directory: candidate
+        run: npm run test:full
+
+      - name: Publish gate result
+        if: always() && steps.plan.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ steps.plan.outputs.head_sha }}
+          TEST_PROFILE: ${{ steps.plan.outputs.test_profile }}
+          CHECKOUT_OUTCOME: ${{ steps.candidate.outcome }}
+          INSTALL_OUTCOME: ${{ steps.install.outcome }}
+          SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
+          FULL_OUTCOME: ${{ steps.full.outcome }}
+        run: |
+          state=failure
+          if [[ "$CHECKOUT_OUTCOME" == success && "$INSTALL_OUTCOME" == success ]]; then
+            if [[ "$TEST_PROFILE" == smoke && "$SMOKE_OUTCOME" == success ]]; then
+              state=success
+            elif [[ "$TEST_PROFILE" == full && "$FULL_OUTCOME" == success ]]; then
+              state=success
+            fi
+          fi
+
+          gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" \
+            -f state="$state" \
+            -f context='AI Test Gate' \
+            -f description="Agent-selected ${TEST_PROFILE} profile: ${state}"
+
+          [[ "$state" == success ]]
