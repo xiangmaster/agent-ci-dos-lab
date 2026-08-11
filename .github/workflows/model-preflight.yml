@@ -36,8 +36,39 @@ jobs:
           test "$code" = "200"
           jq -e '.content[0].type == "text"' response.json >/dev/null
 
-  claude-action:
+  direct-stream:
     needs: direct-api
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Test streaming response
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+        run: |
+          set -euo pipefail
+          jq -n '{
+            model: "claude-sonnet-4-6",
+            max_tokens: 16,
+            stream: true,
+            messages: [{role: "user", content: "Reply with OK only."}]
+          }' > request.json
+
+          code=$(curl --silent --show-error --no-buffer --max-time 90 \
+            --output stream.txt --write-out '%{http_code}' \
+            "${ANTHROPIC_BASE_URL:-https://api.anthropic.com}/v1/messages" \
+            -H "x-api-key: ${ANTHROPIC_API_KEY}" \
+            -H "anthropic-version: 2023-06-01" \
+            -H "content-type: application/json" \
+            --data @request.json)
+
+          echo "stream_http_status=$code"
+          echo "stream_bytes=$(wc -c < stream.txt)"
+          grep -q 'message_stop' stream.txt
+          test "$code" = "200"
+
+  claude-action:
+    needs: direct-stream
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
