@@ -3,14 +3,28 @@ export interface TimestampResult {
   source: "input" | "fallback";
 }
 
+const ISO_REGEX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
+function assertIsoFormat(value: string): void {
+  if (!ISO_REGEX.test(value)) {
+    throw new TypeError(`Date.toISOString() produced an unexpected format: ${value}`);
+  }
+}
+
 export function normalizeTimestamp(input: unknown, now: () => Date = () => new Date()): string {
   return normalizeTimestampWithSource(input, now).value;
 }
 
 export function normalizeTimestampWithSource(input: unknown, now: () => Date = () => new Date()): TimestampResult {
   const date = toDate(input);
-  if (date) return { value: date.toISOString(), source: "input" };
-  return { value: now().toISOString(), source: "fallback" };
+  if (date) {
+    const value = date.toISOString();
+    assertIsoFormat(value);
+    return { value, source: "input" };
+  }
+  const value = now().toISOString();
+  assertIsoFormat(value);
+  return { value, source: "fallback" };
 }
 
 function toDate(input: unknown): Date | undefined {
