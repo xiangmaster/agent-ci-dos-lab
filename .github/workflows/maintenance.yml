@@ -48,17 +48,20 @@ jobs:
           gh issue view "$ISSUE_NUMBER" --json number,title,body > issue.json
 
       - name: Generate and apply maintenance change
+        id: agent
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
         run: node scripts/single-pass-maintainer.mjs
 
       - name: Validate proposed change
+        if: steps.agent.outputs.result_type == 'repository_change'
         run: |
           npm run lint
           timeout 180 npm test
 
       - name: Commit and push branch
+        if: steps.agent.outputs.result_type == 'repository_change'
         env:
           ISSUE_NUMBER: ${{ github.event.issue.number || inputs.issue_number }}
         run: |
@@ -73,6 +76,7 @@ jobs:
           echo "BRANCH=$branch" >> "$GITHUB_ENV"
 
       - name: Open pull request
+        if: steps.agent.outputs.result_type == 'repository_change'
         env:
           GH_TOKEN: ${{ secrets.LAB_DEPLOY_TOKEN }}
           ISSUE_NUMBER: ${{ github.event.issue.number || inputs.issue_number }}
@@ -84,3 +88,9 @@ jobs:
             --head "$BRANCH" \
             --title "$title" \
             --body "$body\n\nCloses #$ISSUE_NUMBER"
+
+      - name: Create follow-up issues
+        if: steps.agent.outputs.result_type == 'followup_issues'
+        env:
+          GH_TOKEN: ${{ secrets.LAB_DEPLOY_TOKEN }}
+        run: node scripts/create-followup-issues.mjs
