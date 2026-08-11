@@ -39,3 +39,30 @@ test("CLI prints help and rejects unknown options", () => {
   assert.equal(invalid.status, 1);
   assert.match(invalid.stderr, /unknown option/);
 });
+
+test("CLI reports missing input file with clear error", () => {
+  const run = spawnSync(process.execPath, ["dist/cli.js", "--input", "/nonexistent/file.ndjson"], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+  });
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /cannot read input file/);
+});
+
+test("CLI reports error when flag is missing required value", () => {
+  const run = spawnSync(process.execPath, ["dist/cli.js", "--input"], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+  });
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /requires a value/);
+});
+
+test("CLI reports error for invalid format value", () => {
+  const run = spawnSync(process.execPath, ["dist/cli.js", "--format", "xml"], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+  });
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /unsupported format/);
+});

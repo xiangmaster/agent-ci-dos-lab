@@ -86,7 +86,15 @@ function parseFormat(value: string): OutputFormat {
 }
 
 async function readInput(path?: string): Promise<string> {
-  if (path && path !== "-") return readFile(path, "utf8");
+  if (path && path !== "-") {
+    try {
+      return await readFile(path, "utf8");
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new Error(`cannot read input file ${path}: ${reason}`);
+    }
+  }
+  if (stdin.readableEnded || stdin.destroyed) return "";
   const chunks: Buffer[] = [];
   for await (const chunk of stdin) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
   return Buffer.concat(chunks).toString("utf8");
@@ -98,7 +106,7 @@ async function writeOutput(path: string | undefined, value: string): Promise<voi
     return;
   }
   await new Promise<void>((resolve, reject) => {
-    const stream = createWriteStream(path, { encoding: "utf8" });
+    const stream = createWriteStream(path, { encoding: "utf8", autoClose: true });
     stream.once("error", reject);
     stream.end(value, resolve);
   });
