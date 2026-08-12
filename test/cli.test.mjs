@@ -9,11 +9,15 @@ test("CLI processes a file, writes output, and reports stats", async () => {
   const directory = await mkdtemp(join(tmpdir(), "log-tidy-cli-"));
   const input = join(directory, "input.ndjson");
   const output = join(directory, "output.json");
+  const configPath = join(directory, "config.json");
+  // Explicitly opt in to token redaction; it is no longer a default key.
+  await writeFile(configPath, JSON.stringify({ redaction: { keys: ["token"] } }));
   await writeFile(input, '{"severity":"warn","message":"slow","token":"secret"}\n');
-  const run = spawnSync(process.execPath, ["dist/cli.js", input, "--output", output, "--format", "json", "--stats"], {
-    cwd: process.cwd(),
-    encoding: "utf8",
-  });
+  const run = spawnSync(
+    process.execPath,
+    ["dist/cli.js", input, "--config", configPath, "--output", output, "--format", "json", "--stats"],
+    { cwd: process.cwd(), encoding: "utf8" },
+  );
   assert.equal(run.status, 0, run.stderr);
   const events = JSON.parse(await readFile(output, "utf8"));
   assert.equal(events[0].level, "warn");

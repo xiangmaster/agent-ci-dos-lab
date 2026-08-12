@@ -5,6 +5,8 @@ import { LogProcessor, parseNdjson, serializeEvents, tidy } from "../dist/index.
 const context = { now: () => new Date("2026-01-02T03:04:05.000Z") };
 
 test("pipeline emits valid events and structured diagnostics", () => {
+  // token is no longer a default redaction key, so it passes through unchanged
+  // and redactedFields is 0 for this input.
   const result = parseNdjson(
     '{"level":"error","msg":"failed"}\nnot-json\n42\n{"level":"debug","token":"x"}',
     {},
@@ -12,7 +14,9 @@ test("pipeline emits valid events and structured diagnostics", () => {
   );
   assert.equal(result.events.length, 2);
   assert.deepEqual(result.diagnostics.map((item) => item.code), ["INVALID_JSON", "NOT_OBJECT"]);
-  assert.deepEqual(result.stats, { received: 4, emitted: 2, sampled: 0, invalid: 2, redactedFields: 1 });
+  assert.deepEqual(result.stats, { received: 4, emitted: 2, sampled: 0, invalid: 2, redactedFields: 0 });
+  // Confirm the token value is preserved by default.
+  assert.equal(result.events[1].token, "x");
 });
 
 test("sampling is stable for the same event and seed", () => {
