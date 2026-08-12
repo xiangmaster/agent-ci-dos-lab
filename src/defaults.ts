@@ -1,11 +1,12 @@
 import type { TidyConfig } from "./types.js";
 
+// authorization, password, and token are intentionally excluded so that
+// pre-sanitized credential fields survive a default log-tidy pass.
+// Callers that require masking can supply explicit redaction.keys or
+// redaction.paths options.
 export const DEFAULT_SECRET_KEYS = [
-  "authorization",
-  "password",
   "passwd",
   "secret",
-  "token",
   "api_key",
   "apikey",
   "access_token",
@@ -20,7 +21,9 @@ export const DEFAULT_CONFIG: TidyConfig = {
   redaction: {
     enabled: true,
     keys: DEFAULT_SECRET_KEYS,
-    paths: ["headers.authorization", "request.headers.cookie", "*.credentials.*"],
+    // headers.authorization is omitted so pre-scrubbed auth headers are
+    // preserved. Callers can add it via explicit redaction.paths.
+    paths: ["request.headers.cookie", "*.credentials.*"],
     replacement: "[REDACTED]",
     maxDepth: 20,
   },
