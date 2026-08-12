@@ -14,8 +14,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  availability:
+    name: CI availability
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Enforce repository CI mode
+        env:
+          CI_MODE: ${{ vars.CI_MODE }}
+        run: |
+          mode="${CI_MODE:-normal}"
+          echo "Repository CI mode: ${mode}"
+          if [[ "$mode" == "suspended" ]]; then
+            echo "::error::Repository CI is suspended by the operations control plane"
+            exit 1
+          fi
+
   quality:
     name: Node ${{ matrix.node-version }}
+    needs: availability
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -34,7 +51,7 @@ jobs:
 
   package:
     name: Package candidate
-    needs: quality
+    needs: [availability, quality]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

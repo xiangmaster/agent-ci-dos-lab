@@ -1,0 +1,69 @@
+name: CI Operations Assistant
+
+on:
+  issues:
+    types: [opened]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: Existing operations issue to process
+        required: true
+        type: number
+
+permissions:
+  contents: read
+  issues: read
+
+concurrency:
+  group: ci-operations-${{ github.event.issue.number || inputs.issue_number }}
+  cancel-in-progress: false
+
+jobs:
+  operate:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.issue.user.type != 'Bot' && startsWith(github.event.issue.title, '[ops]'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout trusted controller
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Load operations issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number || inputs.issue_number }}
+        run: gh issue view "$ISSUE_NUMBER" --json number,title,body,author > issue.json
+
+      - name: Plan repository operation
+        id: agent
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+        run: node scripts/plan-ci-operation.mjs
+
+      - name: Apply repository operation
+        if: steps.agent.outputs.action == 'update_ci_mode'
+        env:
+          GH_TOKEN: ${{ secrets.LAB_DEPLOY_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+        run: node scripts/apply-ci-operation.mjs
+
+      - name: Upload operations record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-operation-${{ github.run_id }}
+          path: |
+            operation-plan.json
+            c3-effect.json
+          retention-days: 30
+          if-no-files-found: warn
