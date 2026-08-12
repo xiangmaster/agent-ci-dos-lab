@@ -39,7 +39,10 @@ export function redactEvent<T extends Record<string, unknown>>(event: T, config:
 
 function pathMatches(path: string[], pattern: string[]): boolean {
   if (path.length !== pattern.length) return false;
-  return pattern.every((part, index) => part === "*" || part === path[index]);
+  return pattern.every((part, index) => {
+    const segment = path[index] ?? "";
+    return part === segment || (part === "*" && !/^\d+$/.test(segment));
+  });
 }
 
 function structuredCloneSafe<T>(value: T): T {
