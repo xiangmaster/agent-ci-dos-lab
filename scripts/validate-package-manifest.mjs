@@ -11,6 +11,9 @@ if (typeof manifest.package !== "string" || basename(manifest.package) !== manif
   throw new Error("manifest package must be a local .tgz filename");
 }
 if (!/^[a-f0-9]{64}$/.test(manifest.sha256)) throw new Error("manifest sha256 is invalid");
+if (manifest.source_sha !== null && !/^[a-f0-9]{40}$/.test(manifest.source_sha)) {
+  throw new Error("manifest source_sha is invalid");
+}
 
 const bytes = await readFile(resolve(directory, manifest.package));
 const digest = createHash("sha256").update(bytes).digest("hex");

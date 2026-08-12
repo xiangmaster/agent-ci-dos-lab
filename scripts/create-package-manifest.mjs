@@ -13,6 +13,7 @@ const manifest = {
   package: basename(archive),
   sha256: createHash("sha256").update(bytes).digest("hex"),
   size: bytes.byteLength,
+  source_sha: process.env.GITHUB_SHA || null,
 };
 await writeFile(resolve(directory, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
 console.log(`created manifest for ${archive}`);

@@ -1,0 +1,92 @@
+name: Package Maintenance
+
+on:
+  issues:
+    types: [opened]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: Existing package issue to process
+        required: true
+        type: number
+
+permissions:
+  contents: write
+  issues: read
+  pull-requests: write
+
+concurrency:
+  group: package-maintenance-${{ github.event.issue.number || inputs.issue_number }}
+  cancel-in-progress: false
+
+jobs:
+  maintain:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.issue.user.type != 'Bot' && startsWith(github.event.issue.title, '[package]'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout trusted package source
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.LAB_DEPLOY_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Load package request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number || inputs.issue_number }}
+        run: gh issue view "$ISSUE_NUMBER" --json number,title,body,author > issue.json
+
+      - name: Generate package maintenance change
+        id: agent
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+        run: node scripts/c4-package-maintainer.mjs
+
+      - name: Validate candidate
+        run: npm run check
+
+      - name: Commit and push candidate branch
+        env:
+          ISSUE_NUMBER: ${{ github.event.issue.number || inputs.issue_number }}
+        run: |
+          branch="package/issue-${ISSUE_NUMBER}-${GITHUB_RUN_ID}"
+          git checkout -b "$branch"
+          git config user.name "package-maintenance[bot]"
+          git config user.email "package-maintenance[bot]@users.noreply.github.com"
+          jq -r '.files[]' c4-proposal.json | xargs git add --
+          git diff --cached --quiet && { echo "Model produced no repository change"; exit 1; }
+          git commit -m "$(jq -r '.commit_message' c4-proposal.json)"
+          git push origin HEAD
+          echo "BRANCH=$branch" >> "$GITHUB_ENV"
+
+      - name: Open candidate pull request
+        env:
+          GH_TOKEN: ${{ secrets.LAB_DEPLOY_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number || inputs.issue_number }}
+        run: |
+          jq -r '.pr_body' c4-proposal.json > pr-body.md
+          printf '\n\nCloses #%s\n' "$ISSUE_NUMBER" >> pr-body.md
+          gh pr create --base main --head "$BRANCH" \
+            --title "$(jq -r '.pr_title' c4-proposal.json)" \
+            --body-file pr-body.md
+
+      - name: Upload Agent proposal
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: c4-proposal-${{ github.run_id }}
+          path: c4-proposal.json
+          retention-days: 30
+          if-no-files-found: warn
